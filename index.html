@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>방문지 순회 내비</title>
+<meta name="description" content="엑셀 주소 목록을 지도에 핀으로 표시하고 방문 순서를 계산해 내비 앱으로 넘겨주는 도구">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1a1d21; --muted: #5f6672;
+    --line: #e2e5ea; --accent: #2f6fed; --accent-text: #ffffff;
+    --ok: #1f9d55; --warn: #d97706; --bad: #dc2626; --pin: #2f6fed;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+    font-size: 17px; line-height: 1.45; -webkit-text-size-adjust: 100%; }
+  body { display: flex; flex-direction: column; height: 100dvh; }
+
+  header { padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  header h1 { margin: 0; font-size: 19px; }
+  header .step { font-size: 14px; color: var(--muted); }
+
+  #map { flex: 1 1 40%; min-height: 220px; background: #dfe6ee; position: relative; }
+  #mapMsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 24px; color: var(--muted); font-size: 16px; }
+
+  #panel { flex: 1 1 60%; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 12px 16px calc(24px + env(safe-area-inset-bottom)); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px; margin-bottom: 12px; }
+  .card h2 { margin: 0 0 10px; font-size: 17px; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row > * { min-width: 0; }
+  label.field { display: block; margin: 8px 0 4px; font-size: 15px; color: var(--muted); }
+  label.check { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 16px; }
+  label.check input { width: 22px; height: 22px; }
+
+  input[type="text"], input[type="password"], select {
+    width: 100%; font: inherit; padding: 12px; border: 1px solid var(--line);
+    border-radius: 10px; background: #fff; color: var(--text); }
+  input[type="file"] { font: inherit; width: 100%; }
+
+  button { font: inherit; font-size: 17px; padding: 12px 16px; border: 0; border-radius: 10px;
+    background: var(--accent); color: var(--accent-text); cursor: pointer; min-height: 48px; }
+  button.secondary { background: #eef1f5; color: var(--text); }
+  button.small { font-size: 15px; padding: 8px 12px; min-height: 40px; }
+  button.tiny { font-size: 14px; padding: 6px 10px; min-height: 36px; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.block { width: 100%; }
+  button.big { width: 100%; font-size: 20px; padding: 18px 16px; min-height: 68px; border-radius: 14px;
+    background: var(--ok); line-height: 1.3; text-align: left; }
+  button.big small { display: block; font-size: 15px; font-weight: 400; opacity: .9; margin-top: 2px; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 13px; }
+  .badge.ok { background: #e3f6ea; color: var(--ok); }
+  .badge.warn { background: #fdf1df; color: var(--warn); }
+  .badge.bad { background: #fde5e5; color: var(--bad); }
+  .notice { background: #fdf1df; border: 1px solid #f5d9a8; color: #7c4a03; border-radius: 10px;
+    padding: 10px 12px; font-size: 14px; margin: 8px 0; }
+
+  .progress { height: 8px; background: #eef1f5; border-radius: 999px; overflow: hidden; margin: 8px 0; }
+  .progress > div { height: 100%; background: var(--accent); width: 0%; transition: width .2s; }
+
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  ul.list li { padding: 10px 0; border-top: 1px solid var(--line); word-break: break-word; overflow-wrap: anywhere; }
+  ul.list li:first-child { border-top: 0; }
+  .num { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+    border-radius: 50%; background: var(--pin); color: #fff; font-weight: 700; font-size: 14px;
+    margin-right: 8px; flex: none; }
+  .num.gray { background: #9aa3ae; }
+  .num.warn { background: var(--warn); }
+  .num.start { background: var(--ok); font-size: 12px; }
+
+  .fail input { margin: 6px 0; }
+
+  /* 순서 목록 */
+  ul.order li { display: flex; gap: 8px; align-items: flex-start; background: var(--card); }
+  ul.order li.dragging { opacity: .5; }
+  ul.order .handle { touch-action: none; cursor: grab; font-size: 22px; color: var(--muted); padding: 2px 6px; user-select: none; }
+  ul.order .body { flex: 1; }
+  ul.order .ctrl { display: flex; flex-direction: column; gap: 4px; }
+
+  /* 지도 위 번호 핀 */
+  .pin { position: relative; width: 30px; height: 30px; border-radius: 50% 50% 50% 0;
+    background: var(--pin); transform: rotate(-45deg); border: 2px solid #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,.35); cursor: pointer; }
+  .pin span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    transform: rotate(45deg); color: #fff; font-weight: 700; font-size: 13px; }
+  .pin.warn { background: var(--warn); }
+  .pin.start { background: var(--ok); }
+  .pin.start span { font-size: 11px; }
+  .pin.done { background: #b4bac3; }
+  .pin.later { background: #fff; border-color: var(--pin); }
+  .pin.later span { color: var(--pin); }
+  .pin.active { transform: rotate(-45deg) scale(1.25); z-index: 10; }
+  .num.done { background: #b4bac3; }
+  .num.later { background: #fff; color: var(--pin); border: 2px solid var(--pin); }
+  ul.list li.done { color: var(--muted); }
+  ul.list li.done b { color: var(--muted); }
+  h3.sub { font-size: 15px; color: var(--muted); margin: 14px 0 6px; }
+
+  .info { position: absolute; left: 0; right: 0; bottom: 0; background: var(--card);
+    border-top: 1px solid var(--line); padding: 12px 16px; font-size: 15px; display: none;
+    word-break: break-word; overflow-wrap: anywhere; box-shadow: 0 -4px 12px rgba(0,0,0,.08); }
+  .info.show { display: block; }
+  .info b { font-size: 16px; }
+
+  details summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+  .setup ol { padding-left: 20px; margin: 8px 0; }
+  .setup li { margin: 6px 0; }
+  code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; font-size: 14px; word-break: break-all; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>방문지 순회 내비</h1>
+  <span class="step">3단계 · 진행 관리</span>
+</header>
+
+<div id="map">
+  <div id="mapMsg">카카오 JavaScript 키를 설정하면 지도가 표시됩니다.</div>
+  <div id="info" class="info"></div>
+</div>
+
+<div id="panel">
+
+  <!-- 다음 목적지 -->
+  <div class="card hidden" id="nextCard">
+    <button id="nextBtn" class="big">다음 목적지 안내<small id="nextSub"></small></button>
+    <p class="muted" id="nextHint" style="margin:8px 0 0"></p>
+    <div class="row" style="margin-top:10px">
+      <button id="nextDone" style="flex:1">✓ 이곳 완료</button>
+      <button id="nextSkip" class="secondary" style="flex:1">건너뛰기</button>
+    </div>
+    <p class="muted" id="nextMeta" style="margin:8px 0 0"></p>
+    <div class="row" style="margin-top:10px">
+      <button id="recalc" class="secondary small" style="flex:1">현재 위치에서 남은 곳 다시 계산</button>
+      <button id="resetAll" class="secondary small">처음부터 다시</button>
+    </div>
+  </div>
+
+  <!-- 설정 -->
+  <details class="card" id="settingsCard">
+    <summary>설정 · 카카오 키 / 내비 앱 <span class="muted" id="keyStatus">키 없음</span></summary>
+    <label class="field">카카오 JavaScript 키</label>
+    <div class="row">
+      <input type="password" id="kakaoKey" placeholder="카카오 개발자 콘솔의 JavaScript 키" autocomplete="off" style="flex:1">
+      <button id="saveKey">저장</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="testGeo" class="secondary small">연결 테스트</button>
+      <span class="muted" id="testResult"></span>
+    </div>
+    <label class="field">길 안내에 쓸 앱</label>
+    <select id="naviApp">
+      <option value="naver">네이버지도</option>
+      <option value="kakaomap">카카오맵</option>
+      <option value="kakaonavi">카카오내비</option>
+    </select>
+    <p class="muted">휴대폰에서만 앱이 열립니다. 앱이 없으면 설치 화면으로 이동합니다.</p>
+    <details class="setup">
+      <summary>키 발급·설정 방법 보기</summary>
+      <ol>
+        <li><a href="https://developers.kakao.com" target="_blank" rel="noopener">developers.kakao.com</a> 로그인 → [내 애플리케이션] → [애플리케이션 추가하기]</li>
+        <li>만든 앱 → [제품 설정] → [카카오맵] → <b>[사용 설정] ON</b></li>
+        <li>[앱 설정] → [플랫폼 키] → <b>JavaScript 키</b>의 [JavaScript SDK 도메인]에
+          <code id="originHint"></code> 등록</li>
+        <li>JavaScript 키를 복사해 위 칸에 붙여넣고 [저장]</li>
+      </ol>
+    </details>
+  </details>
+
+  <!-- 업로드 -->
+  <div class="card">
+    <h2>엑셀 업로드</h2>
+    <input type="file" id="file" accept=".xlsx,.xls,.csv">
+    <p class="muted">첫 번째 시트를 읽습니다. "주소"가 들어간 열을 자동으로 찾습니다.</p>
+  </div>
+
+  <!-- 열 선택 -->
+  <div class="card hidden" id="colCard">
+    <h2>열 선택</h2>
+    <label class="field">주소 열 (필수)</label>
+    <select id="colAddr"></select>
+    <label class="field">이름/업체명 열 (선택)</label>
+    <select id="colName"></select>
+    <label class="field">담당자 열 (선택)</label>
+    <select id="colPerson"></select>
+    <label class="field">메모 열 (선택)</label>
+    <select id="colMemo"></select>
+    <p class="muted" id="rowCount"></p>
+    <button id="geocode" class="block" style="margin-top:8px">주소 → 좌표 변환하고 지도에 표시</button>
+  </div>
+
+  <!-- 진행 -->
+  <div class="card hidden" id="progCard">
+    <div class="row" style="justify-content:space-between">
+      <b id="progText">변환 중…</b>
+      <span id="progSummary" class="muted"></span>
+    </div>
+    <div class="progress"><div id="progBar"></div></div>
+  </div>
+
+  <!-- 출발지 + 순서 계산 -->
+  <div class="card hidden" id="routeCard">
+    <h2>출발지</h2>
+    <div class="row">
+      <button id="useGps" class="secondary" style="flex:1">현재 위치 사용</button>
+    </div>
+    <p class="muted" id="startStatus">아직 출발지가 없습니다.</p>
+    <div class="row">
+      <input type="text" id="startAddr" placeholder="또는 출발 주소 직접 입력" style="flex:1">
+      <button id="setStartAddr" class="small">주소로 설정</button>
+    </div>
+
+    <h2 style="margin-top:16px">방문 순서 계산</h2>
+    <label class="check"><input type="checkbox" id="optReturn"> 마지막에 출발지로 복귀</label>
+    <label class="field">하루에 방문할 곳 수 (나머지는 "다음날 이후"로 넘김)</label>
+    <input type="number" id="dailyLimit" min="1" max="200" inputmode="numeric" style="width:120px;font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px">
+    <label class="field">거리 계산 방식</label>
+    <select id="distMode">
+      <option value="line">직선거리 (무료, 빠름)</option>
+      <option value="road">도로 거리 (카카오모빌리티 API, 별도 키 필요)</option>
+    </select>
+    <div id="roadOpts" class="hidden">
+      <label class="field">카카오 REST API 키 (카카오모빌리티 길찾기용)</label>
+      <input type="password" id="mobilityKey" placeholder="카카오 개발자 콘솔의 REST API 키" autocomplete="off">
+      <p class="muted" id="roadEstimate"></p>
+      <details class="setup">
+        <summary>도로 거리 방식 준비 방법</summary>
+        <ol>
+          <li>카카오 개발자 콘솔 → 같은 앱 → [앱 설정] → [플랫폼 키] → <b>REST API 키</b> 복사</li>
+          <li>API 호출은 "출발지+방문지 수"만큼 발생하며 일 10,000건까지 무료입니다. 초과하면 그날은 차단됩니다.</li>
+          <li>출발지에서 10km 밖에 있는 곳은 API가 거리를 주지 않아, 그 구간은 직선거리×1.3으로 대신 계산합니다.</li>
+          <li>REST 키는 이 브라우저에만 저장되지만, 웹페이지에서 쓰는 키이므로 3단계 배포 시 도메인 제한 설정을 안내해 드립니다.</li>
+        </ol>
+      </details>
+    </div>
+    <div class="notice">직선거리 방식은 강·바다·산 때문에 도로가 크게 우회하는 곳에서는 순서가 비효율적일 수 있습니다. 결과 목록에서 드래그로 순서를 바꿀 수 있습니다.</div>
+    <button id="calcOrder" class="block">방문 순서 계산</button>
+    <p class="muted" id="calcStatus"></p>
+  </div>
+
+  <!-- 순서 목록 -->
+  <div class="card hidden" id="orderCard">
+    <h2>오늘 방문 순서 <span class="muted" id="orderSummary"></span></h2>
+    <p class="muted">≡ 를 누른 채 끌거나 ▲▼ 버튼으로 순서를 바꿀 수 있습니다. 완료한 곳은 회색으로 바뀝니다.</p>
+    <ul class="list order" id="orderList"></ul>
+    <div id="laterWrap" class="hidden">
+      <h3 class="sub">다음날 이후 <span id="laterSummary"></span></h3>
+      <ul class="list order" id="laterList"></ul>
+    </div>
+    <details id="doneWrap" class="hidden" style="margin-top:12px">
+      <summary>완료한 곳 <span id="doneSummary" class="muted"></span></summary>
+      <ul class="list" id="doneList"></ul>
+    </details>
+  </div>
+
+  <!-- 중복 -->
+  <div class="card hidden" id="dupCard">
+    <h2><span class="badge warn">중복 좌표</span></h2>
+    <ul class="list" id="dupList"></ul>
+  </div>
+
+  <!-- 실패 -->
+  <div class="card hidden" id="failCard">
+    <h2><span class="badge bad">변환 실패</span> <span id="failCount"></span></h2>
+    <p class="muted" id="failHint">주소를 고쳐서 [다시 시도]를 누르세요. 도로명 주소나 "시/구/동 + 번지"까지 넣으면 잘 찾습니다.</p>
+    <ul class="list" id="failList"></ul>
+  </div>
+
+  <!-- 결과 목록 -->
+  <div class="card hidden" id="okCard">
+    <h2>지도에 표시된 주소 <span id="okCount" class="muted"></span></h2>
+    <ul class="list" id="okList"></ul>
+  </div>
+
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- 상태 ----------
+  const LS_KEY = 'vn.kakaoKey';
+  const LS_COLS = 'vn.cols.';
+  const LS_SET = 'vn.settings';
+  const KAKAO_SDK_URL = 'https://t1.kakaocdn.net/kakao_js_sdk/2.8.3/kakao.min.js';
+  const KAKAO_SDK_SRI = 'sha384-oroumrnFVE0xtgqyDZJARgERibXg2C28380uaUZz2kHDS5CR7tu20eGiOU6GkTpy';
+  const MOBILITY_URL = 'https://apis-navi.kakaomobility.com/v1/destinations/directions';
+  const ROAD_RADIUS = 10000;      // 다중 목적지 API 최대 반경(m)
+  const ROAD_CHUNK = 30;          // 한 호출당 최대 목적지 수
+  const ROAD_DAILY_FREE = 10000;
+
+  let map = null, geocoder = null, places = null;
+  let headers = [], rawRows = [];
+  let items = [];          // { idx, address, name, memo, data, lat, lng, status, matched, note, reason, overlay, pinEl }
+  let overlays = [], routeLine = null, startOverlay = null;
+  let start = null;        // { lat, lng, name, source }
+  let order = [];          // 남은 곳의 방문 순서 (items의 idx 배열). 앞 todayCount개가 오늘 계획
+  let todayCount = 0;
+  let legInfo = {};        // idx → { km, mode }  이전 지점에서의 거리
+  let planDate = '';       // 오늘 계획을 만든 날짜 (YYYY-MM-DD)
+  let settings = Object.assign({ naviApp: 'naver', returnToStart: false, distMode: 'line', mobilityKey: '', dailyLimit: 7 },
+    JSON.parse(localStorage.getItem(LS_SET) || '{}'));
+  const LS_STATE = 'vn.state';
+  const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+  // ---------- 진행 상태 저장/복원 ----------
+  function saveState() {
+    if (!items.length) { localStorage.removeItem(LS_STATE); return; }
+    const clean = items.map(({ overlay, pinEl, ...rest }) => rest);
+    localStorage.setItem(LS_STATE, JSON.stringify({ headers, rawRows, items: clean, start, order, todayCount, legInfo, planDate }));
+  }
+  function loadState() {
+    try {
+      const s = JSON.parse(localStorage.getItem(LS_STATE) || 'null');
+      if (!s || !s.items?.length) return false;
+      headers = s.headers || []; rawRows = s.rawRows || []; items = s.items; start = s.start || null;
+      order = s.order || []; todayCount = s.todayCount || 0; legInfo = s.legInfo || {}; planDate = s.planDate || '';
+      return true;
+    } catch (e) { return false; }
+  }
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  const isAndroid = /Android/.test(ua);
+  const saveSettings = () => localStorage.setItem(LS_SET, JSON.stringify(settings));
+
+  $('originHint').textContent = location.origin;
+
+  // ---------- 설정 UI ----------
+  $('naviApp').value = settings.naviApp;
+  $('optReturn').checked = settings.returnToStart;
+  $('distMode').value = settings.distMode;
+  $('mobilityKey').value = settings.mobilityKey;
+  $('roadOpts').classList.toggle('hidden', settings.distMode !== 'road');
+  $('naviApp').addEventListener('change', () => { settings.naviApp = $('naviApp').value; saveSettings(); updateNext(); });
+  $('optReturn').addEventListener('change', () => { settings.returnToStart = $('optReturn').checked; saveSettings(); });
+  $('distMode').addEventListener('change', () => {
+    settings.distMode = $('distMode').value; saveSettings();
+    $('roadOpts').classList.toggle('hidden', settings.distMode !== 'road'); updateRoadEstimate();
+  });
+  $('mobilityKey').addEventListener('change', () => { settings.mobilityKey = $('mobilityKey').value.trim(); saveSettings(); });
+  $('dailyLimit').value = settings.dailyLimit;
+  $('dailyLimit').addEventListener('change', () => {
+    const v = Math.max(1, Math.min(200, parseInt($('dailyLimit').value, 10) || 7));
+    $('dailyLimit').value = v; settings.dailyLimit = v; saveSettings();
+  });
+
+  // ---------- 카카오 지도 SDK ----------
+  function loadKakao(key) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=' + encodeURIComponent(key) + '&libraries=services&autoload=false';
+      s.onload = () => { try { kakao.maps.load(resolve); } catch (e) { reject(e); } };
+      s.onerror = () => reject(new Error('SDK 로드 실패'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function initMap(key) {
+    $('mapMsg').textContent = '지도를 불러오는 중…';
+    try {
+      await loadKakao(key);
+    } catch (e) {
+      $('mapMsg').innerHTML = '지도를 불러오지 못했습니다.<br>키가 틀렸거나, 이 주소(<code>' + esc(location.origin) + '</code>)가 카카오 콘솔의 JavaScript SDK 도메인에 등록되지 않았을 수 있습니다.<br>또는 [제품 설정] → [카카오맵] 사용 설정이 꺼져 있을 수 있습니다.';
+      $('keyStatus').textContent = '지도 로드 실패';
+      $('settingsCard').open = true;
+      return;
+    }
+    $('mapMsg').style.display = 'none';
+    map = new kakao.maps.Map($('map'), { center: new kakao.maps.LatLng(37.5665, 126.9780), level: 8 });
+    geocoder = new kakao.maps.services.Geocoder();
+    places = new kakao.maps.services.Places();
+    kakao.maps.event.addListener(map, 'click', hideInfo);
+    $('keyStatus').textContent = '지도 연결됨';
+    if (items.length) drawPins();
+  }
+
+  $('saveKey').addEventListener('click', () => {
+    const k = $('kakaoKey').value.trim();
+    if (!k) { alert('JavaScript 키를 입력하세요.'); return; }
+    localStorage.setItem(LS_KEY, k);
+    if (window.kakao) { location.reload(); return; }
+    initMap(k);
+  });
+
+  const savedKey = localStorage.getItem(LS_KEY);
+  if (savedKey) { $('kakaoKey').value = savedKey; initMap(savedKey); }
+  else $('settingsCard').open = true;
+
+  // 이전 진행 상태 복원 (지도는 SDK 로드 후 drawPins에서 그려짐)
+  if (loadState()) {
+    fillColumnSelects();
+    $('colCard').classList.remove('hidden');
+    $('rowCount').textContent = `저장된 데이터 ${rawRows.length}행 (${headers.join(', ')})`;
+    $('progCard').classList.remove('hidden'); $('progText').textContent = '저장된 결과 복원';
+    renderAll(); $('routeCard').classList.remove('hidden'); updateRoadEstimate();
+    if (start) $('startStatus').textContent = `출발지: ${start.name} (${start.lat.toFixed(5)}, ${start.lng.toFixed(5)})`;
+    renderOrder(); updateNext();
+  }
+
+  // ---------- 엑셀 파싱 ----------
+  $('file').addEventListener('change', async (ev) => {
+    const f = ev.target.files[0];
+    if (!f) return;
+    let wb;
+    try { wb = XLSX.read(await f.arrayBuffer(), { type: 'array' }); }
+    catch (e) { alert('엑셀 파일을 읽지 못했습니다: ' + e.message); return; }
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+    let hIdx = grid.findIndex((r, i) => i < 10 && r.some((c) => String(c).includes('주소')));
+    if (hIdx < 0) hIdx = grid.findIndex((r) => r.some((c) => String(c).trim() !== ''));
+    if (hIdx < 0) { alert('내용이 비어 있는 시트입니다.'); return; }
+
+    headers = grid[hIdx].map((h, i) => String(h).trim() || ('열' + (i + 1)));
+    rawRows = grid.slice(hIdx + 1)
+      .filter((r) => r.some((c) => String(c).trim() !== ''))
+      .map((r) => { const data = {}; headers.forEach((h, i) => { data[h] = String(r[i] ?? '').trim(); }); return { data }; });
+
+    fillColumnSelects();
+    $('colCard').classList.remove('hidden');
+    $('rowCount').textContent = `데이터 ${rawRows.length}행, 열 ${headers.length}개 (${headers.join(', ')})`;
+    resetResults();
+  });
+
+  function fillColumnSelects() {
+    const saved = JSON.parse(localStorage.getItem(LS_COLS + headers.join('|')) || 'null');
+    const pick = (re) => headers.find((h) => re.test(h)) || '';
+    const set = (sel, value, allowNone) => {
+      sel.innerHTML = (allowNone ? '<option value="">(없음)</option>' : '') +
+        headers.map((h) => `<option value="${esc(h)}">${esc(h)}</option>`).join('');
+      sel.value = value;
+      if (sel.value !== value) sel.value = allowNone ? '' : headers[0];
+    };
+    set($('colAddr'), saved?.addr ?? pick(/주소/), false);
+    set($('colName'), saved?.name ?? pick(/업체|상호|고객|거래처|이름|성명/), true);
+    set($('colPerson'), saved?.person ?? pick(/담당/), true);
+    set($('colMemo'), saved?.memo ?? pick(/메모|비고|특이|요청/), true);
+    if (!pick(/주소/) && !saved) alert('"주소"가 들어간 열 이름을 찾지 못했습니다. 주소 열을 직접 선택하세요.');
+  }
+
+  function saveColumnChoice() {
+    localStorage.setItem(LS_COLS + headers.join('|'), JSON.stringify({
+      addr: $('colAddr').value, name: $('colName').value, person: $('colPerson').value, memo: $('colMemo').value,
+    }));
+  }
+
+  // ---------- 지오코딩 ----------
+  function addressSearch(addr) {
+    return new Promise((resolve) => {
+      geocoder.addressSearch(addr, (result, status) => {
+        if (status === kakao.maps.services.Status.OK && result.length) {
+          resolve({ ok: true, lat: +result[0].y, lng: +result[0].x, matched: result[0].address_name, approx: false });
+        } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
+          resolve({ ok: false, reason: '검색 결과 없음' });
+        } else {
+          resolve({ ok: false, reason: '오류(' + status + ')' });
+        }
+      });
+    });
+  }
+
+  function keywordSearch(addr) {
+    return new Promise((resolve) => {
+      places.keywordSearch(addr, (result, status) => {
+        if (status === kakao.maps.services.Status.OK && result.length) {
+          const r = result[0];
+          resolve({ ok: true, lat: +r.y, lng: +r.x, matched: (r.place_name ? r.place_name + ' · ' : '') + (r.road_address_name || r.address_name), approx: true });
+        } else resolve({ ok: false, reason: '검색 결과 없음' });
+      });
+    });
+  }
+
+  function addressCandidates(raw) {
+    const out = [];
+    const push = (s) => { s = s.replace(/\s+/g, ' ').replace(/[,，]/g, ' ').trim(); if (s && !out.includes(s)) out.push(s); };
+    push(raw);
+    let s = raw.replace(/[\(\[（【][^\)\]）】]*[\)\]）】]/g, ' ');
+    push(s);
+    s = s.replace(/^\s*\(?\d{5}\)?\s*/, '');
+    s = s.replace(/(^|\s)\d+\s*(층|호|동)(?=\s|$)/g, ' ');
+    push(s);
+    const m = s.match(/^(.*(?:로|길|대로)\s+\d+(?:-\d+)?)(?=\s|$)/);
+    if (m) push(m[1]);
+    const j = s.match(/^(.*(?:동|리|가)\s+(?:산\s*)?\d+(?:-\d+)?)(?:번지)?(?=\s|$)/);
+    if (j) push(j[1]);
+    return out;
+  }
+
+  async function geocodeAddress(raw) {
+    const cands = addressCandidates(raw);
+    let r = null;
+    for (const c of cands) {
+      r = await addressSearch(c);
+      if (r.ok) { if (c !== raw) r.note = '정리한 주소로 찾음'; return r; }
+      if (r.reason !== '검색 결과 없음') return r;
+    }
+    for (const c of cands) { r = await keywordSearch(c); if (r.ok) { r.note = '장소 검색으로 찾음'; return r; } }
+    return nearbyFallback(cands);
+  }
+
+  async function geocodeOne(it) {
+    const raw = it.address.replace(/\s+/g, ' ').trim();
+    if (!raw) { it.status = 'fail'; it.reason = '주소가 비어 있음'; return; }
+    const r = await geocodeAddress(raw);
+    if (r.ok) {
+      it.lat = r.lat; it.lng = r.lng; it.matched = r.matched; it.note = r.note || '';
+      it.status = r.approx ? 'approx' : 'ok'; it.reason = '';
+    } else {
+      it.status = 'fail'; it.reason = r.reason; it.lat = it.lng = null; it.note = '';
+    }
+  }
+
+  async function nearbyFallback(cands) {
+    const structured = cands.filter((c) => /(?:로|길|대로|동|리|가)\s+(?:산\s*)?\d+(?:-\d+)?$/.test(c)).sort((a, b) => a.length - b.length)[0];
+    if (!structured) return { ok: false, reason: '검색 결과 없음' };
+    const mm = structured.match(/^(.*?)(\d+)(?:-(\d+))?$/);
+    const head = mm[1], n = +mm[2], sub = mm[3];
+    if (sub) {
+      const r = await addressSearch(head + n);
+      if (r.ok) return { ...r, approx: true, note: `부번을 뺀 ${n}번지로 대체` };
+    }
+    for (const d of [1, -1, 2, -2, 3, -3, 4, -4]) {
+      const k = n + d; if (k < 1) continue;
+      const r = await addressSearch(head + k);
+      if (r.ok) return { ...r, approx: true, note: `${n}번은 없어서 인근 ${k}번 위치로 대체` };
+    }
+    const parts = structured.split(' ');
+    if (parts.length >= 3) {
+      const r = await addressSearch(parts.slice(1).join(' '));
+      if (r.ok) return { ...r, approx: true, note: `"${parts[0]}"을(를) 빼고 찾음` };
+    }
+    const roadOnly = head.trim();
+    let r = await addressSearch(roadOnly);
+    if (!r.ok) r = await keywordSearch(roadOnly);
+    if (r.ok) return { ...r, approx: true, note: `번지를 못 찾아 "${roadOnly}" 기준 대략 위치로 대체` };
+    return { ok: false, reason: '검색 결과 없음' };
+  }
+
+  $('testGeo').addEventListener('click', async () => {
+    const out = $('testResult');
+    if (!geocoder) { out.textContent = '지도가 아직 연결되지 않았습니다.'; return; }
+    out.textContent = '테스트 중…';
+    const r = await addressSearch('서울특별시 중구 세종대로 110');
+    if (r.ok) out.textContent = '정상: 연결에 문제가 없습니다.';
+    else if (r.reason === '검색 결과 없음') out.textContent = '응답은 왔지만 결과가 비어 있습니다. [카카오맵] 사용 설정 ON을 확인하세요.';
+    else out.textContent = `실패: ${r.reason}. [카카오맵] 사용 설정과 SDK 도메인(${location.origin}) 등록을 확인하세요.`;
+  });
+
+  async function runQueue(list, worker, concurrency, onProgress) {
+    let i = 0, done = 0;
+    async function next() {
+      while (i < list.length) { const it = list[i++]; await worker(it); done++; onProgress(done, list.length); }
+    }
+    await Promise.all(Array.from({ length: Math.min(concurrency, list.length) }, next));
+  }
+
+  $('geocode').addEventListener('click', async () => {
+    if (!geocoder) { alert('먼저 설정에서 카카오 JavaScript 키를 저장해 지도를 연결하세요.'); return; }
+    const ca = $('colAddr').value, cn = $('colName').value, cp = $('colPerson').value, cm = $('colMemo').value;
+    saveColumnChoice();
+    items = rawRows.map((r, i) => ({
+      idx: i + 1, address: r.data[ca] || '', name: cn ? r.data[cn] : '', person: cp ? r.data[cp] : '', memo: cm ? r.data[cm] : '',
+      data: r.data, lat: null, lng: null, status: 'pending', matched: '', note: '', reason: '', done: null, doneAt: '',
+    }));
+    order = []; todayCount = 0; legInfo = {}; planDate = '';
+    $('geocode').disabled = true;
+    $('progCard').classList.remove('hidden');
+    await runQueue(items, geocodeOne, 3, (d, n) => {
+      $('progBar').style.width = (d / n * 100) + '%';
+      $('progText').textContent = `좌표 변환 중 ${d}/${n}`;
+    });
+    $('progText').textContent = '변환 완료';
+    $('geocode').disabled = false;
+    renderAll(); renderOrder(); updateNext(); saveState();
+    $('routeCard').classList.remove('hidden');
+    updateRoadEstimate();
+    $('routeCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // ---------- 출발지 ----------
+  function setStart(s) {
+    start = s;
+    $('startStatus').textContent = `출발지: ${s.name} (${s.lat.toFixed(5)}, ${s.lng.toFixed(5)})`;
+    drawPins(); saveState();
+  }
+
+  function getGps() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) { reject(new Error('이 브라우저는 위치 기능을 지원하지 않습니다')); return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, name: '현재 위치', source: 'gps' }),
+        (err) => reject(new Error(err.code === 1 ? '위치 권한이 거부되었습니다' : err.code === 2 ? '위치를 확인할 수 없습니다' : '시간 초과')),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 });
+    });
+  }
+
+  $('useGps').addEventListener('click', async () => {
+    $('startStatus').textContent = '현재 위치를 찾는 중…';
+    try { setStart(await getGps()); }
+    catch (e) { $('startStatus').textContent = e.message + '. 아래에 출발 주소를 직접 입력하세요. (위치 기능은 https 주소나 localhost에서만 동작합니다)'; }
+  });
+
+  $('setStartAddr').addEventListener('click', async () => {
+    const a = $('startAddr').value.trim();
+    if (!a) { alert('출발 주소를 입력하세요.'); return; }
+    if (!geocoder) { alert('지도가 연결되지 않았습니다.'); return; }
+    $('startStatus').textContent = '주소를 찾는 중…';
+    const r = await geocodeAddress(a);
+    if (r.ok) setStart({ lat: r.lat, lng: r.lng, name: a + (r.note ? ` (${r.note})` : ''), source: 'manual' });
+    else $('startStatus').textContent = '출발 주소를 찾지 못했습니다: ' + r.reason;
+  });
+
+  // ---------- 거리 계산 ----------
+  function haversine(a, b) {
+    const R = 6371, toR = Math.PI / 180;
+    const dLat = (b.lat - a.lat) * toR, dLng = (b.lng - a.lng) * toR;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * toR) * Math.cos(b.lat * toR) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  function geocodedItems() { return items.filter((it) => it.lat != null); }
+  function remainingItems() { return items.filter((it) => it.lat != null && it.done !== 'done'); }
+  function byIdxMap() { return Object.fromEntries(items.map((it) => [it.idx, it])); }
+
+  function roadCallCount(n) { return (n + 1) * Math.ceil(n / ROAD_CHUNK); }
+
+  function updateRoadEstimate() {
+    const n = remainingItems().length;
+    if (!n) { $('roadEstimate').textContent = ''; return; }
+    const calls = roadCallCount(n);
+    let t = `방문지 ${n}곳 → API 호출 ${calls}건 예상 (일 무료 ${ROAD_DAILY_FREE.toLocaleString()}건).`;
+    if (calls > ROAD_DAILY_FREE) t += ' ⚠ 일일 무료 한도를 넘습니다. 직선거리 방식을 쓰세요.';
+    else if (calls > ROAD_DAILY_FREE * 0.2) t += ' ⚠ 하루 한도의 20%를 넘게 씁니다. 여러 번 다시 계산하면 한도에 걸릴 수 있습니다.';
+    $('roadEstimate').textContent = t;
+  }
+
+  // 다중 목적지 API로 points 간 거리 행렬(km). 실패/반경 밖 구간은 직선×1.3
+  async function roadMatrix(points, onProgress) {
+    const n = points.length;
+    const D = Array.from({ length: n }, () => new Array(n).fill(null));
+    let missing = 0, done = 0, total = roadCallCount(n - 1);
+    for (let i = 0; i < n; i++) {
+      const others = points.map((p, j) => ({ p, j })).filter((o) => o.j !== i);
+      for (let c = 0; c < others.length; c += ROAD_CHUNK) {
+        const chunk = others.slice(c, c + ROAD_CHUNK);
+        const body = {
+          origin: { x: points[i].lng, y: points[i].lat },
+          destinations: chunk.map((o) => ({ key: String(o.j), x: o.p.lng, y: o.p.lat })),
+          radius: ROAD_RADIUS, priority: 'DISTANCE',
+        };
+        const res = await fetch(MOBILITY_URL, {
+          method: 'POST',
+          headers: { 'Authorization': 'KakaoAK ' + settings.mobilityKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}` + (res.status === 401 ? ' (REST API 키 확인)' : res.status === 429 ? ' (호출 한도 초과)' : ''));
+        const json = await res.json();
+        for (const r of json.routes || []) {
+          const j = +r.key;
+          const dist = r.summary?.distance ?? r.distance;
+          if ((r.result_code === 0 || r.result_code === undefined) && dist != null) D[i][j] = dist / 1000;
+        }
+        done++; onProgress(done, total);
+      }
+    }
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      if (i === j) D[i][j] = 0;
+      else if (D[i][j] == null) { D[i][j] = haversine(points[i], points[j]) * 1.3; missing++; }
+    }
+    return { D, missing: missing / 2 };
+  }
+
+  // ---------- 순서 최적화: 최근접 이웃 + 2-opt (0번 = 출발지 고정) ----------
+  function optimize(D, closed) {
+    const n = D.length;
+    if (n <= 2) return [...Array(n).keys()].slice(1);
+    const visited = new Array(n).fill(false); visited[0] = true;
+    let path = [0], cur = 0;
+    for (let k = 1; k < n; k++) {
+      let best = -1, bd = Infinity;
+      for (let j = 1; j < n; j++) if (!visited[j] && D[cur][j] < bd) { bd = D[cur][j]; best = j; }
+      visited[best] = true; path.push(best); cur = best;
+    }
+    if (closed) path.push(0);
+    const last = path.length - 1;   // closed면 마지막은 출발지(고정), 아니면 마지막 방문지(자유)
+    let improved = true, guard = 0;
+    while (improved && guard++ < 200) {
+      improved = false;
+      for (let i = 1; i < last; i++) {
+        for (let j = i + 1; j <= last; j++) {
+          if (closed && j === last) continue;
+          const a = path[i - 1], b = path[i], c = path[j], d = j < last ? path[j + 1] : null;
+          const before = D[a][b] + (d != null ? D[c][d] : 0);
+          const after = D[a][c] + (d != null ? D[b][d] : 0);
+          if (after < before - 1e-9) {
+            path = path.slice(0, i).concat(path.slice(i, j + 1).reverse(), path.slice(j + 1));
+            improved = true;
+          }
+        }
+      }
+    }
+    return path.slice(1, closed ? -1 : undefined);
+  }
+
+  $('calcOrder').addEventListener('click', () => calcRoute());
+  $('recalc').addEventListener('click', async () => {
+    $('calcStatus').textContent = '현재 위치를 찾는 중…';
+    try { setStart(await getGps()); }
+    catch (e) {
+      if (!start) { alert(e.message + '. 출발 주소를 직접 입력한 뒤 다시 계산하세요.'); return; }
+      $('calcStatus').textContent = e.message + '. 기존 출발지(' + start.name + ')로 계산합니다.';
+    }
+    await calcRoute();
+  });
+
+  async function calcRoute() {
+    if (!start) { alert('먼저 출발지를 정하세요. [현재 위치 사용] 또는 출발 주소 입력.'); return; }
+    const list = remainingItems();
+    if (!list.length) { alert('남은 방문지가 없습니다. 모두 완료했거나 좌표가 없습니다.'); return; }
+    items.forEach((it) => { if (it.done === 'skip') it.done = null; });   // 건너뛴 표시는 재계산 시 초기화
+    const points = [start, ...list];
+    const btn = $('calcOrder'); btn.disabled = true;
+    let D, modeUsed = 'line', missing = 0, roadErr = '';
+    try {
+      if (settings.distMode === 'road') {
+        if (!settings.mobilityKey) throw new Error('REST API 키를 입력하세요.');
+        $('calcStatus').textContent = '도로 거리 조회 중…';
+        const r = await roadMatrix(points, (d, t) => { $('calcStatus').textContent = `도로 거리 조회 중 ${d}/${t}`; });
+        D = r.D; missing = r.missing; modeUsed = 'road';
+      }
+    } catch (e) {
+      roadErr = e instanceof TypeError ? '브라우저에서 API 호출이 차단된 것으로 보입니다(네트워크/CORS)' : e.message;
+      D = null;
+    }
+    if (!D) {
+      D = points.map((a) => points.map((b) => haversine(a, b)));
+      modeUsed = 'line';
+    }
+    const seq = optimize(D, settings.returnToStart);
+    order = seq.map((k) => points[k].idx);
+    todayCount = Math.min(settings.dailyLimit, order.length);
+    planDate = todayStr();
+    legInfo = {};
+    let prev = 0, total = 0;
+    seq.forEach((k, i) => { legInfo[points[k].idx] = { km: D[prev][k], mode: modeUsed }; if (i < todayCount) total += D[prev][k]; prev = k; });
+    if (settings.returnToStart && todayCount === order.length) total += D[prev][0];
+    const modeText = modeUsed === 'road' ? '도로 거리' : '직선거리';
+    let msg = `오늘 ${todayCount}곳 · ${modeText} 기준 ${total.toFixed(1)}km` + (settings.returnToStart && todayCount === order.length ? ' (복귀 포함)' : '');
+    if (order.length > todayCount) msg += ` · ${order.length - todayCount}곳은 다음날 이후로`;
+    if (modeUsed === 'road' && missing) msg += ` · ${missing}개 구간은 10km 반경 밖이라 직선×1.3으로 계산`;
+    if (modeUsed === 'line' && settings.distMode === 'road') msg = `도로 거리 조회 실패(${roadErr}) → 직선거리로 대신 계산. ` + msg;
+    $('calcStatus').textContent = msg;
+    btn.disabled = false;
+    renderOrder(); drawPins(); updateNext(); saveState();
+    $('nextCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ---------- 완료 / 건너뛰기 / 오늘로 올리기 ----------
+  function markDone(idx) {
+    const it = byIdxMap()[idx]; if (!it) return;
+    const i = order.indexOf(idx);
+    if (i >= 0) { order.splice(i, 1); if (i < todayCount) todayCount--; }
+    it.done = 'done'; it.doneAt = new Date().toISOString();
+    afterProgressChange();
+  }
+  function markSkip(idx) {
+    const it = byIdxMap()[idx]; if (!it) return;
+    const i = order.indexOf(idx);
+    if (i < 0 || i >= todayCount) return;
+    order.splice(i, 1); todayCount--;
+    order.splice(todayCount, 0, idx);      // 다음날 이후 목록의 맨 앞으로
+    it.done = 'skip';
+    afterProgressChange();
+  }
+  function moveToToday(idx) {
+    const i = order.indexOf(idx);
+    if (i < todayCount) return;
+    order.splice(i, 1); order.splice(todayCount, 0, idx); todayCount++;
+    const it = byIdxMap()[idx]; if (it && it.done === 'skip') it.done = null;
+    afterProgressChange();
+  }
+  function undoDone(idx) {
+    const it = byIdxMap()[idx]; if (!it) return;
+    it.done = null; it.doneAt = '';
+    if (!order.includes(idx)) order.push(idx);
+    afterProgressChange();
+  }
+  function afterProgressChange() {
+    recomputeLegs();
+    renderAll(); renderOrder(); drawPins(); updateNext(); saveState();
+  }
+
+  $('nextDone').addEventListener('click', () => { const it = nextItem(); if (it) markDone(it.idx); });
+  $('nextSkip').addEventListener('click', () => { const it = nextItem(); if (it) markSkip(it.idx); });
+  $('resetAll').addEventListener('click', () => {
+    if (!confirm('완료 표시와 방문 순서를 모두 지우고 처음 상태로 돌립니다. 주소 데이터는 유지됩니다. 계속할까요?')) return;
+    items.forEach((it) => { it.done = null; it.doneAt = ''; });
+    order = []; todayCount = 0; legInfo = {}; planDate = '';
+    $('calcStatus').textContent = '';
+    afterProgressChange();
+    $('routeCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // ---------- 순서 목록 (드래그 / ▲▼) ----------
+  function itemHtml(it, label, numCls, legText, buttons, liCls) {
+    return `<li class="${liCls || ''}" data-idx="${it.idx}">
+        ${liCls === 'today' ? '<span class="handle" aria-label="끌어서 순서 변경">≡</span>' : ''}
+        <span class="num ${numCls}">${label}</span>
+        <div class="body">
+          ${it.name ? `<b>${esc(it.name)}</b>` : ''}${it.person ? ` <span class="muted">담당 ${esc(it.person)}</span>` : ''}${it.name || it.person ? '<br>' : ''}${esc(it.address)}
+          ${it.done === 'skip' ? '<br><span class="badge warn">건너뜀</span>' : ''}
+          ${legText ? `<br><span class="muted">${legText}</span>` : ''}
+          ${buttons ? `<div class="row" style="margin-top:6px">${buttons}</div>` : ''}
+        </div>
+        ${liCls === 'today' ? '<div class="ctrl"><button class="tiny secondary up">▲</button><button class="tiny secondary down">▼</button></div>' : ''}
+      </li>`;
+  }
+
+  function renderOrder() {
+    const byIdx = byIdxMap();
+    const doneList = items.filter((it) => it.done === 'done');
+    const today = order.slice(0, todayCount), later = order.slice(todayCount);
+    $('orderCard').classList.toggle('hidden', order.length === 0 && doneList.length === 0);
+    $('orderSummary').textContent = today.length ? `(${today.length}곳${planDate && planDate !== todayStr() ? ` · ${planDate} 계획` : ''})` : '(없음)';
+
+    $('orderList').innerHTML = today.map((idx, pos) => {
+      const it = byIdx[idx], leg = legInfo[idx];
+      const legText = leg ? `${pos === 0 ? '출발지에서' : '이전 지점에서'} ${leg.km.toFixed(1)}km (${leg.mode === 'road' ? '도로' : '직선'})` : '';
+      const btns = `<button class="tiny secondary go">여기로 안내</button><button class="tiny done">✓ 완료</button><button class="tiny secondary skip">건너뛰기</button>`;
+      return itemHtml(it, pos + 1, it.status === 'approx' ? 'warn' : '', legText, btns, 'today');
+    }).join('');
+    $('orderList').querySelectorAll('li').forEach((li, pos) => {
+      const idx = +li.dataset.idx;
+      li.querySelector('.up').disabled = pos === 0;
+      li.querySelector('.down').disabled = pos === today.length - 1;
+      li.querySelector('.up').addEventListener('click', () => moveOrder(idx, -1));
+      li.querySelector('.down').addEventListener('click', () => moveOrder(idx, +1));
+      li.querySelector('.go').addEventListener('click', () => openNavi(byIdx[idx]));
+      li.querySelector('.done').addEventListener('click', () => markDone(idx));
+      li.querySelector('.skip').addEventListener('click', () => markSkip(idx));
+      li.querySelector('.body').addEventListener('click', (e) => { if (e.target.tagName !== 'BUTTON') focusItem(idx); });
+      li.querySelector('.handle').addEventListener('pointerdown', (e) => startDrag(e, li));
+    });
+
+    $('laterWrap').classList.toggle('hidden', later.length === 0);
+    $('laterSummary').textContent = `(${later.length}곳)`;
+    $('laterList').innerHTML = later.map((idx, i) => {
+      const it = byIdx[idx];
+      return itemHtml(it, todayCount + i + 1, 'later', '', `<button class="tiny secondary today">오늘로 올리기</button><button class="tiny done">✓ 완료</button>`, 'later');
+    }).join('');
+    $('laterList').querySelectorAll('li').forEach((li) => {
+      const idx = +li.dataset.idx;
+      li.querySelector('.today').addEventListener('click', () => moveToToday(idx));
+      li.querySelector('.done').addEventListener('click', () => markDone(idx));
+      li.querySelector('.body').addEventListener('click', (e) => { if (e.target.tagName !== 'BUTTON') focusItem(idx); });
+    });
+
+    $('doneWrap').classList.toggle('hidden', doneList.length === 0);
+    $('doneSummary').textContent = `(${doneList.length}곳)`;
+    $('doneList').innerHTML = doneList.map((it) => {
+      const when = it.doneAt ? new Date(it.doneAt) : null;
+      const whenText = when ? `${when.getMonth() + 1}/${when.getDate()} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')} 완료` : '완료';
+      return itemHtml(it, '✓', 'done', whenText, `<button class="tiny secondary undo">완료 취소</button>`, 'done');
+    }).join('');
+    $('doneList').querySelectorAll('li').forEach((li) => {
+      const idx = +li.dataset.idx;
+      li.querySelector('.undo').addEventListener('click', () => undoDone(idx));
+      li.querySelector('.body').addEventListener('click', (e) => { if (e.target.tagName !== 'BUTTON') focusItem(idx); });
+    });
+  }
+
+  function moveOrder(idx, delta) {
+    const i = order.indexOf(idx), j = i + delta;
+    if (i < 0 || j < 0 || j >= todayCount) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    afterManualReorder();
+  }
+
+  function recomputeLegs() {
+    // 순서가 바뀐 뒤에는 직선거리로 구간 거리만 다시 계산
+    const byIdx = byIdxMap();
+    let prev = start, total = 0; legInfo = {};
+    order.forEach((idx, i) => { const it = byIdx[idx]; const km = prev ? haversine(prev, it) : 0; legInfo[idx] = { km, mode: 'line' }; if (i < todayCount) total += km; prev = it; });
+    return total;
+  }
+
+  function afterManualReorder() {
+    const total = recomputeLegs();
+    $('calcStatus').textContent = `수동으로 바꾼 순서 · 오늘 ${todayCount}곳 · 직선거리 기준 ${total.toFixed(1)}km`;
+    renderOrder(); drawPins(); updateNext(); saveState();
+  }
+
+  function startDrag(e, li) {
+    e.preventDefault();
+    const list = $('orderList');
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    li.classList.add('dragging');
+    const onMove = (ev) => {
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const over = el && el.closest('#orderList > li');
+      if (!over || over === li) return;
+      const r = over.getBoundingClientRect();
+      if (ev.clientY < r.top + r.height / 2) list.insertBefore(li, over);
+      else list.insertBefore(li, over.nextSibling);
+    };
+    const onUp = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+      li.classList.remove('dragging');
+      const newToday = [...list.querySelectorAll('li')].map((x) => +x.dataset.idx);
+      const newOrder = newToday.concat(order.slice(todayCount));
+      if (newOrder.join() !== order.join()) { order = newOrder; afterManualReorder(); }
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+  }
+
+  // ---------- 다음 목적지 / 내비 연결 ----------
+  function nextItem() {
+    if (!todayCount) return null;
+    return items.find((it) => it.idx === order[0]) || null;
+  }
+
+  function updateNext() {
+    const it = nextItem();
+    const doneN = items.filter((x) => x.done === 'done').length;
+    const show = !!it || doneN > 0 || order.length > 0;
+    $('nextCard').classList.toggle('hidden', !show);
+    if (!show) return;
+    const appName = { naver: '네이버지도', kakaomap: '카카오맵', kakaonavi: '카카오내비' }[settings.naviApp];
+    $('nextBtn').disabled = !it; $('nextDone').disabled = !it; $('nextSkip').disabled = !it;
+    if (it) {
+      $('nextSub').textContent = `다음: ${it.name || it.address}${it.person ? ` (담당 ${it.person})` : ''} · 오늘 남은 곳 ${todayCount}개 · ${appName}`;
+      $('nextHint').textContent = (isIOS || isAndroid) ? '' : 'PC에서는 내비 앱이 열리지 않습니다. 휴대폰에서 눌러 주세요.';
+    } else {
+      $('nextSub').textContent = order.length ? '오늘 계획을 모두 마쳤습니다' : '남은 곳이 없습니다';
+      $('nextHint').textContent = order.length ? '내일은 [현재 위치에서 남은 곳 다시 계산]을 눌러 새 계획을 만드세요.' : '';
+    }
+    $('nextMeta').textContent = `완료 ${doneN}곳 · 다음날 이후 ${Math.max(0, order.length - todayCount)}곳 · 전체 남은 곳 ${order.length}곳` +
+      (planDate && planDate !== todayStr() ? ` · ⚠ ${planDate}에 만든 계획입니다. 다시 계산을 권합니다.` : '');
+  }
+
+  $('nextBtn').addEventListener('click', () => { const it = nextItem(); if (it) openNavi(it); });
+
+  // 앱별 URL 구성 (테스트를 위해 순수 함수로 분리)
+  function buildNaviUrl(app, it, platform) {
+    const name = it.name || it.address;
+    const lat = it.lat.toFixed(6), lng = it.lng.toFixed(6);
+    if (app === 'naver') {
+      const q = `dlat=${lat}&dlng=${lng}&dname=${encodeURIComponent(name)}&appname=${encodeURIComponent(location.origin)}`;
+      if (platform === 'android') {
+        return { href: `intent://route/car?${q}#Intent;scheme=nmap;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;package=com.nhn.android.nmap;end` };
+      }
+      return { href: `nmap://route/car?${q}`, fallback: 'http://itunes.apple.com/app/id311867728?mt=8' };
+    }
+    if (app === 'kakaomap') {
+      const sp = start ? `sp=${start.lat.toFixed(6)},${start.lng.toFixed(6)}&` : '';
+      const q = `${sp}ep=${lat},${lng}&by=car`;
+      return { href: `kakaomap://route?${q}`, fallback: `http://m.map.kakao.com/scheme/route?${q}` };
+    }
+    return null;   // kakaonavi는 SDK 호출
+  }
+
+  function openWithFallback(href, fallback) {
+    const t0 = Date.now();
+    let left = false;
+    const onHide = () => { left = true; };
+    document.addEventListener('visibilitychange', onHide, { once: true });
+    location.href = href;
+    setTimeout(() => {
+      document.removeEventListener('visibilitychange', onHide);
+      if (!left && document.visibilityState === 'visible' && Date.now() - t0 < 2500 && fallback) location.href = fallback;
+    }, 1500);
+  }
+
+  function loadKakaoSdk() {
+    return new Promise((resolve, reject) => {
+      if (window.Kakao && window.Kakao.Navi) return resolve();
+      const s = document.createElement('script');
+      s.src = KAKAO_SDK_URL; s.integrity = KAKAO_SDK_SRI; s.crossOrigin = 'anonymous';
+      s.onload = () => { try { if (!Kakao.isInitialized()) Kakao.init(localStorage.getItem(LS_KEY)); resolve(); } catch (e) { reject(e); } };
+      s.onerror = () => reject(new Error('카카오 SDK 로드 실패'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function openNavi(it) {
+    if (!it || it.lat == null) return;
+    const platform = isAndroid ? 'android' : isIOS ? 'ios' : 'pc';
+    if (settings.naviApp === 'kakaonavi') {
+      if (platform === 'pc') { alert('카카오내비는 휴대폰에서만 열립니다.'); return; }
+      try {
+        await loadKakaoSdk();
+        Kakao.Navi.start({ name: it.name || it.address, x: it.lng, y: it.lat, coordType: 'wgs84' });
+      } catch (e) { alert('카카오내비 연결 실패: ' + e.message); }
+      return;
+    }
+    const u = buildNaviUrl(settings.naviApp, it, platform);
+    if (platform === 'pc') {
+      alert('휴대폰에서 눌러야 내비 앱이 열립니다.\n\n열릴 주소:\n' + u.href);
+      return;
+    }
+    if (platform === 'android' && settings.naviApp === 'naver') location.href = u.href;
+    else openWithFallback(u.href, u.fallback);
+  }
+
+  // ---------- 화면 ----------
+  function resetResults() {
+    items = []; order = []; todayCount = 0; legInfo = {}; planDate = ''; clearPins();
+    ['progCard', 'dupCard', 'failCard', 'okCard', 'routeCard', 'orderCard', 'nextCard'].forEach((id) => $(id).classList.add('hidden'));
+    localStorage.removeItem(LS_STATE);
+  }
+
+  function renderAll() {
+    const ok = items.filter((it) => it.status === 'ok' || it.status === 'approx');
+    const fail = items.filter((it) => it.status === 'fail');
+    const approx = items.filter((it) => it.status === 'approx');
+    $('progSummary').textContent = `성공 ${ok.length} · 대체/유사 ${approx.length} · 실패 ${fail.length}`;
+
+    $('okCard').classList.toggle('hidden', ok.length === 0);
+    $('okCount').textContent = `(${ok.length}곳)`;
+    $('okList').innerHTML = ok.map((it) => `
+      <li data-idx="${it.idx}" class="${it.done === 'done' ? 'done' : ''}">
+        <div class="row" style="align-items:flex-start;flex-wrap:nowrap">
+          <span class="num ${it.done === 'done' ? 'done' : it.status === 'approx' ? 'warn' : ''}">${it.done === 'done' ? '✓' : it.idx}</span>
+          <div style="flex:1">
+            ${it.name ? `<b>${esc(it.name)}</b>` : ''}${it.person ? ` <span class="muted">담당 ${esc(it.person)}</span>` : ''}${it.name || it.person ? '<br>' : ''}
+            ${esc(it.address)}
+            ${it.status === 'approx' ? `<br><span class="badge warn">${esc(it.note || '유사 검색으로 찾음')} · 위치 확인 필요</span>` : ''}
+            ${it.matched && it.matched !== it.address ? `<br><span class="muted">→ ${esc(it.matched)}</span>` : ''}
+            ${it.memo ? `<br><span class="muted">메모: ${esc(it.memo)}</span>` : ''}
+          </div>
+        </div>
+      </li>`).join('');
+    $('okList').querySelectorAll('li').forEach((li) => li.addEventListener('click', () => focusItem(+li.dataset.idx)));
+
+    $('failCard').classList.toggle('hidden', fail.length === 0);
+    $('failCount').textContent = `${fail.length}곳`;
+    if (fail.length && fail.every((it) => it.reason.startsWith('오류'))) {
+      $('failHint').innerHTML = '<b>모든 주소가 "오류"로 실패했습니다.</b> 주소 문제가 아니라 카카오 설정 문제일 가능성이 큽니다. 설정의 [연결 테스트] 버튼을 눌러 확인해 주세요.';
+    } else if (fail.length === items.length) {
+      $('failHint').innerHTML = '<b>모든 주소가 실패했습니다.</b> 설정의 [연결 테스트]로 연결 상태를 먼저 확인하고, 정상이면 주소 열이 맞게 선택됐는지 확인해 주세요.';
+    } else {
+      $('failHint').textContent = '주소를 고쳐서 [다시 시도]를 누르세요. 도로명 주소나 "시/구/동 + 번지"까지 넣으면 잘 찾습니다.';
+    }
+    $('failList').innerHTML = fail.map((it) => `
+      <li class="fail" data-idx="${it.idx}">
+        <span class="num gray">${it.idx}</span>${it.name ? `<b>${esc(it.name)}</b> ` : ''}<span class="muted">${esc(it.reason)}</span>
+        <input type="text" value="${esc(it.address)}" aria-label="주소 수정">
+        <button class="small retry">다시 시도</button>
+      </li>`).join('');
+    $('failList').querySelectorAll('li').forEach((li) => {
+      li.querySelector('.retry').addEventListener('click', async () => {
+        const it = items.find((x) => x.idx === +li.dataset.idx);
+        it.address = li.querySelector('input').value;
+        li.querySelector('.retry').disabled = true;
+        await geocodeOne(it);
+        renderAll(); updateRoadEstimate(); saveState();
+      });
+    });
+
+    const groups = new Map();
+    ok.forEach((it) => {
+      const k = it.lat.toFixed(5) + ',' + it.lng.toFixed(5);
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(it);
+    });
+    const dups = [...groups.values()].filter((g) => g.length > 1);
+    $('dupCard').classList.toggle('hidden', dups.length === 0);
+    $('dupList').innerHTML = dups.map((g) => `
+      <li>${g.map((it) => `<span class="num">${it.idx}</span>`).join('')}
+        같은 위치입니다: ${esc(g.map((it) => it.name || it.address).join(' / '))}</li>`).join('');
+
+    drawPins();
+  }
+
+  function clearPins() {
+    overlays.forEach((o) => o.setMap(null));
+    overlays = []; hideInfo();
+    if (routeLine) { routeLine.setMap(null); routeLine = null; }
+    if (startOverlay) { startOverlay.setMap(null); startOverlay = null; }
+  }
+
+  function makePinEl(label, cls) {
+    const el = document.createElement('div');
+    el.className = 'pin' + (cls ? ' ' + cls : '');
+    el.innerHTML = `<span>${esc(label)}</span>`;
+    return el;
+  }
+
+  function drawPins() {
+    if (!map) return;
+    clearPins();
+    const bounds = new kakao.maps.LatLngBounds();
+    const pos = Object.fromEntries(order.map((idx, i) => [idx, i + 1]));
+    let count = 0;
+    if (start) {
+      const p = new kakao.maps.LatLng(start.lat, start.lng);
+      startOverlay = new kakao.maps.CustomOverlay({ position: p, content: makePinEl('출발', 'start'), yAnchor: 1, xAnchor: 0.5 });
+      startOverlay.setMap(map); bounds.extend(p); count++;
+    }
+    items.forEach((it) => {
+      if (it.lat == null) return;
+      const p = new kakao.maps.LatLng(it.lat, it.lng);
+      const isDone = it.done === 'done';
+      const isLater = !isDone && pos[it.idx] > todayCount;
+      const el = makePinEl(isDone ? '✓' : (pos[it.idx] || it.idx), isDone ? 'done' : isLater ? 'later' : it.status === 'approx' ? 'warn' : '');
+      el.addEventListener('click', (e) => { e.stopPropagation(); showInfo(it); });
+      const ov = new kakao.maps.CustomOverlay({ position: p, content: el, yAnchor: 1, xAnchor: 0.5, clickable: true, zIndex: isDone ? 1 : isLater ? 2 : 3 });
+      ov.setMap(map);
+      it.overlay = ov; it.pinEl = el;
+      overlays.push(ov); bounds.extend(p); count++;
+    });
+    if (todayCount && start) {
+      const byIdx = byIdxMap();
+      const path = [new kakao.maps.LatLng(start.lat, start.lng), ...order.slice(0, todayCount).map((idx) => new kakao.maps.LatLng(byIdx[idx].lat, byIdx[idx].lng))];
+      if (settings.returnToStart && todayCount === order.length) path.push(new kakao.maps.LatLng(start.lat, start.lng));
+      routeLine = new kakao.maps.Polyline({ path, strokeWeight: 4, strokeColor: '#2f6fed', strokeOpacity: 0.8, strokeStyle: 'solid' });
+      routeLine.setMap(map);
+    }
+    if (count === 1) { map.setCenter(bounds.getSouthWest()); map.setLevel(4); }
+    else if (count > 1) map.setBounds(bounds, 40, 40, 40, 40);
+  }
+
+  function focusItem(idx) {
+    const it = items.find((x) => x.idx === idx);
+    if (!it || it.lat == null || !map) return;
+    map.panTo(new kakao.maps.LatLng(it.lat, it.lng));
+    showInfo(it);
+    $('map').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function showInfo(it) {
+    items.forEach((x) => x.pinEl && x.pinEl.classList.remove('active'));
+    it.pinEl && it.pinEl.classList.add('active');
+    const pos = order.indexOf(it.idx);
+    const isDone = it.done === 'done', isLater = pos >= todayCount && pos >= 0;
+    const state = isDone ? '완료한 곳' : isLater ? `다음날 이후 ${pos + 1}번` : pos >= 0 ? `오늘 ${pos + 1}번째` : '';
+    let btns = `<button class="small ${isDone ? 'secondary' : ''}" id="infoGo">여기로 안내</button>`;
+    if (isDone) btns += `<button class="small secondary" id="infoUndo">완료 취소</button>`;
+    else if (pos >= 0) {
+      btns += `<button class="small" id="infoDone">✓ 완료</button>`;
+      btns += isLater ? `<button class="small secondary" id="infoToday">오늘로 올리기</button>` : `<button class="small secondary" id="infoSkip">건너뛰기</button>`;
+    }
+    $('info').innerHTML = `<span class="num ${isDone ? 'done' : isLater ? 'later' : it.status === 'approx' ? 'warn' : ''}">${isDone ? '✓' : pos >= 0 ? pos + 1 : it.idx}</span>` +
+      `<span class="muted">${state ? state + ' · ' : ''}엑셀 ${it.idx}행</span><br>` +
+      (it.name ? `<b>${esc(it.name)}</b>` : '') + (it.person ? ` <span class="muted">담당 ${esc(it.person)}</span>` : '') + (it.name || it.person ? '<br>' : '') + esc(it.address) +
+      (it.status === 'approx' ? `<br><span class="badge warn">${esc(it.note || '유사 검색으로 찾음')} · 위치 확인 필요</span>` : '') +
+      (it.matched && it.matched !== it.address ? `<br><span class="muted">→ ${esc(it.matched)}</span>` : '') +
+      (it.memo ? `<br><span class="muted">메모: ${esc(it.memo)}</span>` : '') +
+      `<div class="row" style="margin-top:8px">${btns}</div>`;
+    $('info').classList.add('show');
+    $('infoGo').addEventListener('click', () => openNavi(it));
+    $('infoDone')?.addEventListener('click', () => { markDone(it.idx); hideInfo(); });
+    $('infoSkip')?.addEventListener('click', () => { markSkip(it.idx); hideInfo(); });
+    $('infoToday')?.addEventListener('click', () => { moveToToday(it.idx); hideInfo(); });
+    $('infoUndo')?.addEventListener('click', () => { undoDone(it.idx); hideInfo(); });
+  }
+
+  function hideInfo() {
+    $('info').classList.remove('show');
+    items.forEach((x) => x.pinEl && x.pinEl.classList.remove('active'));
+  }
+
+  // 테스트용 훅 (콘솔에서 확인)
+  window.__vn = { haversine, optimize, buildNaviUrl, addressCandidates, get order() { return order; }, get todayCount() { return todayCount; }, get items() { return items; }, get start() { return start; } };
+})();
+</script>
+</body>
+</html>
