@@ -109,6 +109,19 @@
     word-break: break-word; overflow-wrap: anywhere; box-shadow: 0 -4px 12px rgba(0,0,0,.08); }
   .info.show { display: block; }
   .info b { font-size: 16px; }
+  .info { max-height: 60%; overflow-y: auto; }
+  .kv { margin: 2px 0; }
+  .kv .k { color: var(--muted); font-size: 13px; margin-right: 6px; }
+  .kv a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .fieldmemo { width: 100%; font: inherit; font-size: 15px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; margin-top: 8px; resize: vertical; min-height: 56px; }
+  #legend { position: absolute; left: 8px; top: 8px; z-index: 5; display: flex; flex-wrap: wrap; gap: 4px; max-width: 70%; }
+  #legend span { background: rgba(255,255,255,.92); border-radius: 999px; padding: 2px 8px; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  #legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+  .chips label { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; font-size: 15px; background: #fff; }
+  .chips label.on { background: #e8efff; border-color: var(--accent); }
+  .chips input { width: 18px; height: 18px; margin: 0; }
+  .fm { color: #7c4a03; font-size: 14px; }
 
   details summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
   .setup ol { padding-left: 20px; margin: 8px 0; }
@@ -126,6 +139,7 @@
 
 <div id="map">
   <div id="mapMsg">카카오 JavaScript 키를 설정하면 지도가 표시됩니다.</div>
+  <div id="legend" class="hidden"></div>
   <div id="info" class="info"></div>
 </div>
 
@@ -195,6 +209,10 @@
     <select id="colPerson"></select>
     <label class="field">메모 열 (선택)</label>
     <select id="colMemo"></select>
+    <label class="field">핀에 표시할 열 (여러 개 선택 가능, 선택은 기억됩니다)</label>
+    <div class="chips" id="showCols"></div>
+    <label class="field">핀 색상 기준 열 (값별로 핀 색이 달라지고 지도에 범례가 표시됩니다)</label>
+    <select id="colorCol"></select>
     <p class="muted" id="rowCount"></p>
     <button id="geocode" class="block" style="margin-top:8px">주소 → 좌표 변환하고 지도에 표시</button>
   </div>
@@ -263,6 +281,13 @@
     </details>
   </div>
 
+  <!-- 내보내기 -->
+  <div class="card hidden" id="exportCard">
+    <h2>결과 내보내기</h2>
+    <p class="muted">원본 열 그대로에 방문순서 · 완료여부 · 완료시각 · 현장메모 열을 붙인 엑셀을 내려받습니다.</p>
+    <button id="exportXlsx" class="block secondary">결과 엑셀 내보내기</button>
+  </div>
+
   <!-- 중복 -->
   <div class="card hidden" id="dupCard">
     <h2><span class="badge warn">중복 좌표</span></h2>
@@ -308,6 +333,8 @@
   let todayCount = 0;
   let legInfo = {};        // idx → { km, mode }  이전 지점에서의 거리
   let planDate = '';       // 오늘 계획을 만든 날짜 (YYYY-MM-DD)
+  let showCols = [];       // 핀에 표시할 열 이름들
+  let colorCol = '';       // 핀 색상 기준 열
   let settings = Object.assign({ naviApp: 'naver', returnToStart: false, distMode: 'line', mobilityKey: '', dailyLimit: 7 },
     JSON.parse(localStorage.getItem(LS_SET) || '{}'));
   const LS_STATE = 'vn.state';
@@ -399,16 +426,6 @@
   if (savedKey) { $('kakaoKey').value = savedKey; initMap(savedKey); }
   else $('settingsCard').open = true;
 
-  // 이전 진행 상태 복원 (지도는 SDK 로드 후 drawPins에서 그려짐)
-  if (loadState()) {
-    fillColumnSelects();
-    $('colCard').classList.remove('hidden');
-    $('rowCount').textContent = `저장된 데이터 ${rawRows.length}행 (${headers.join(', ')})`;
-    $('progCard').classList.remove('hidden'); $('progText').textContent = '저장된 결과 복원';
-    renderAll(); $('routeCard').classList.remove('hidden'); updateRoadEstimate();
-    if (start) $('startStatus').textContent = `출발지: ${start.name} (${start.lat.toFixed(5)}, ${start.lng.toFixed(5)})`;
-    renderOrder(); updateNext();
-  }
 
   // ---------- 엑셀 파싱 ----------
   $('file').addEventListener('change', async (ev) => {
@@ -447,14 +464,89 @@
     set($('colName'), saved?.name ?? pick(/업체|상호|고객|거래처|이름|성명/), true);
     set($('colPerson'), saved?.person ?? pick(/담당/), true);
     set($('colMemo'), saved?.memo ?? pick(/메모|비고|특이|요청/), true);
+    // 핀에 표시할 열: 기본은 전화번호·메모처럼 현장에서 볼 만한 열
+    showCols = saved?.show ?? headers.filter((h) => /전화|연락|휴대|메모|비고|특이|요청|시간|수량|품목/.test(h));
+    $('showCols').innerHTML = headers.map((h) => `<label class="${showCols.includes(h) ? 'on' : ''}"><input type="checkbox" value="${esc(h)}" ${showCols.includes(h) ? 'checked' : ''}>${esc(h)}</label>`).join('');
+    $('showCols').querySelectorAll('input').forEach((cb) => cb.addEventListener('change', () => {
+      showCols = [...$('showCols').querySelectorAll('input:checked')].map((x) => x.value);
+      $('showCols').querySelectorAll('label').forEach((l) => l.classList.toggle('on', l.querySelector('input').checked));
+      saveColumnChoice(); refreshViews();
+    }));
+    set($('colorCol'), saved?.colorCol ?? '', true);
+    colorCol = $('colorCol').value;
+    $('colorCol').addEventListener('change', () => { colorCol = $('colorCol').value; saveColumnChoice(); refreshViews(); });
     if (!pick(/주소/) && !saved) alert('"주소"가 들어간 열 이름을 찾지 못했습니다. 주소 열을 직접 선택하세요.');
   }
 
   function saveColumnChoice() {
     localStorage.setItem(LS_COLS + headers.join('|'), JSON.stringify({
       addr: $('colAddr').value, name: $('colName').value, person: $('colPerson').value, memo: $('colMemo').value,
+      show: showCols, colorCol,
     }));
   }
+
+  function refreshViews() { if (items.length) { renderAll(); renderOrder(); updateNext(); } }
+
+  // ---------- 핀 추가 정보 / 전화번호 / 색상 ----------
+  const PHONE_RE = /^\s*(\+82[\s-]?)?0?\d{1,2}[\s-]?\d{3,4}[\s-]?\d{4}\s*$/;
+  function valueHtml(v) {
+    v = String(v ?? '').trim();
+    if (!v) return '';
+    if (PHONE_RE.test(v)) { const digits = v.replace(/[^\d+]/g, ''); return `<a href="tel:${esc(digits)}">📞 ${esc(v)}</a>`; }
+    if (/^https?:\/\//.test(v)) return `<a href="${esc(v)}" target="_blank" rel="noopener">${esc(v)}</a>`;
+    return esc(v);
+  }
+  function extraHtml(it, compact) {
+    const cols = showCols.filter((h) => h !== $('colAddr').value && h !== $('colName').value && h !== $('colPerson').value && h !== $('colMemo').value);
+    const rows = cols.map((h) => { const v = valueHtml(it.data?.[h]); return v ? `<div class="kv"><span class="k">${esc(h)}</span>${v}</div>` : ''; }).filter(Boolean);
+    if (it.fieldMemo) rows.push(`<div class="kv fm">✎ ${esc(it.fieldMemo)}</div>`);
+    if (!rows.length) return '';
+    return compact ? `<div style="margin-top:4px">${rows.join('')}</div>` : `<div style="margin-top:6px">${rows.join('')}</div>`;
+  }
+
+  const PALETTE = ['#2f6fed', '#e0533d', '#1f9d55', '#d97706', '#7c3aed', '#0891b2', '#db2777', '#65a30d', '#9f1239', '#475569'];
+  function colorMap() {
+    if (!colorCol) return null;
+    const vals = [];
+    items.forEach((it) => { const v = String(it.data?.[colorCol] ?? '').trim() || '(빈 값)'; if (!vals.includes(v)) vals.push(v); });
+    const m = {}; vals.forEach((v, i) => { m[v] = PALETTE[i % PALETTE.length]; });
+    return m;
+  }
+  function pinColor(it, cm) { if (!cm) return null; return cm[String(it.data?.[colorCol] ?? '').trim() || '(빈 값)']; }
+  function renderLegend(cm) {
+    const el = $('legend');
+    if (!cm) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+    el.classList.remove('hidden');
+    el.innerHTML = `<span><b>${esc(colorCol)}</b></span>` + Object.entries(cm).map(([v, c]) => `<span><i style="background:${c}"></i>${esc(v)}</span>`).join('');
+  }
+
+  // ---------- 현장 메모 ----------
+  function bindFieldMemo(textarea, it) {
+    let t = null;
+    textarea.addEventListener('input', () => {
+      it.fieldMemo = textarea.value;
+      clearTimeout(t); t = setTimeout(() => { saveState(); renderAll(); renderOrder(); updateNext(); }, 600);
+    });
+  }
+
+  // ---------- 결과 엑셀 내보내기 ----------
+  $('exportXlsx').addEventListener('click', () => {
+    if (!items.length) return;
+    const doneSeq = items.filter((it) => it.done === 'done').sort((a, b) => (a.doneAt || '').localeCompare(b.doneAt || ''));
+    const rows = items.map((it) => {
+      const row = {}; headers.forEach((h) => { row[h] = it.data?.[h] ?? ''; });
+      const pos = order.indexOf(it.idx);
+      row['방문순서'] = it.done === 'done' ? `완료 ${doneSeq.indexOf(it) + 1}` : pos >= 0 ? (pos < todayCount ? `오늘 ${pos + 1}` : `다음날 ${pos + 1}`) : (it.lat == null ? '좌표 없음' : '');
+      row['완료여부'] = it.done === 'done' ? '완료' : it.done === 'skip' ? '건너뜀' : '';
+      row['완료시각'] = it.doneAt ? new Date(it.doneAt).toLocaleString('ko-KR') : '';
+      row['현장메모'] = it.fieldMemo || '';
+      row['좌표확인'] = it.status === 'approx' ? (it.note || '유사 검색') : it.status === 'fail' ? '변환 실패' : '';
+      return row;
+    });
+    const ws = XLSX.utils.json_to_sheet(rows, { header: [...headers, '방문순서', '완료여부', '완료시각', '현장메모', '좌표확인'] });
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '방문결과');
+    XLSX.writeFile(wb, `방문결과_${todayStr()}.xlsx`);
+  });
 
   // ---------- 지오코딩 ----------
   function addressSearch(addr) {
@@ -822,6 +914,7 @@
           ${it.name ? `<b>${esc(it.name)}</b>` : ''}${it.person ? ` <span class="muted">담당 ${esc(it.person)}</span>` : ''}${it.name || it.person ? '<br>' : ''}${esc(it.address)}
           ${it.done === 'skip' ? '<br><span class="badge warn">건너뜀</span>' : ''}
           ${legText ? `<br><span class="muted">${legText}</span>` : ''}
+          ${extraHtml(it, true)}
           ${buttons ? `<div class="row" style="margin-top:6px">${buttons}</div>` : ''}
         </div>
         ${liCls === 'today' ? '<div class="ctrl"><button class="tiny secondary up">▲</button><button class="tiny secondary down">▼</button></div>' : ''}
@@ -946,7 +1039,8 @@
     $('nextBtn').disabled = !it; $('nextDone').disabled = !it; $('nextSkip').disabled = !it;
     if (it) {
       $('nextSub').textContent = `다음: ${it.name || it.address}${it.person ? ` (담당 ${it.person})` : ''} · 오늘 남은 곳 ${todayCount}개 · ${appName}`;
-      $('nextHint').textContent = (isIOS || isAndroid) ? '' : 'PC에서는 내비 앱이 열리지 않습니다. 휴대폰에서 눌러 주세요.';
+      $('nextHint').innerHTML = `<span style="color:var(--text)">${esc(it.address)}</span>` + extraHtml(it) +
+        ((isIOS || isAndroid) ? '' : '<br>PC에서는 내비 앱이 열리지 않습니다. 휴대폰에서 눌러 주세요.');
     } else {
       $('nextSub').textContent = order.length ? '오늘 계획을 모두 마쳤습니다' : '남은 곳이 없습니다';
       $('nextHint').textContent = order.length ? '내일은 [현재 위치에서 남은 곳 다시 계산]을 눌러 새 계획을 만드세요.' : '';
@@ -1022,7 +1116,8 @@
   // ---------- 화면 ----------
   function resetResults() {
     items = []; order = []; todayCount = 0; legInfo = {}; planDate = ''; clearPins();
-    ['progCard', 'dupCard', 'failCard', 'okCard', 'routeCard', 'orderCard', 'nextCard'].forEach((id) => $(id).classList.add('hidden'));
+    ['progCard', 'dupCard', 'failCard', 'okCard', 'routeCard', 'orderCard', 'nextCard', 'exportCard'].forEach((id) => $(id).classList.add('hidden'));
+    renderLegend(null);
     localStorage.removeItem(LS_STATE);
   }
 
@@ -1033,6 +1128,7 @@
     $('progSummary').textContent = `성공 ${ok.length} · 대체/유사 ${approx.length} · 실패 ${fail.length}`;
 
     $('okCard').classList.toggle('hidden', ok.length === 0);
+    $('exportCard').classList.toggle('hidden', items.length === 0);
     $('okCount').textContent = `(${ok.length}곳)`;
     $('okList').innerHTML = ok.map((it) => `
       <li data-idx="${it.idx}" class="${it.done === 'done' ? 'done' : ''}">
@@ -1044,6 +1140,7 @@
             ${it.status === 'approx' ? `<br><span class="badge warn">${esc(it.note || '유사 검색으로 찾음')} · 위치 확인 필요</span>` : ''}
             ${it.matched && it.matched !== it.address ? `<br><span class="muted">→ ${esc(it.matched)}</span>` : ''}
             ${it.memo ? `<br><span class="muted">메모: ${esc(it.memo)}</span>` : ''}
+            ${extraHtml(it, true)}
           </div>
         </div>
       </li>`).join('');
@@ -1096,10 +1193,14 @@
     if (startOverlay) { startOverlay.setMap(null); startOverlay = null; }
   }
 
-  function makePinEl(label, cls) {
+  function makePinEl(label, cls, color) {
     const el = document.createElement('div');
     el.className = 'pin' + (cls ? ' ' + cls : '');
     el.innerHTML = `<span>${esc(label)}</span>`;
+    if (color && cls !== 'done') {
+      if (cls === 'later') { el.style.borderColor = color; el.firstChild.style.color = color; }
+      else el.style.background = color;
+    }
     return el;
   }
 
@@ -1108,6 +1209,7 @@
     clearPins();
     const bounds = new kakao.maps.LatLngBounds();
     const pos = Object.fromEntries(order.map((idx, i) => [idx, i + 1]));
+    const cm = colorMap(); renderLegend(cm);
     let count = 0;
     if (start) {
       const p = new kakao.maps.LatLng(start.lat, start.lng);
@@ -1119,7 +1221,7 @@
       const p = new kakao.maps.LatLng(it.lat, it.lng);
       const isDone = it.done === 'done';
       const isLater = !isDone && pos[it.idx] > todayCount;
-      const el = makePinEl(isDone ? '✓' : (pos[it.idx] || it.idx), isDone ? 'done' : isLater ? 'later' : it.status === 'approx' ? 'warn' : '');
+      const el = makePinEl(isDone ? '✓' : (pos[it.idx] || it.idx), isDone ? 'done' : isLater ? 'later' : (it.status === 'approx' && !cm) ? 'warn' : '', pinColor(it, cm));
       el.addEventListener('click', (e) => { e.stopPropagation(); showInfo(it); });
       const ov = new kakao.maps.CustomOverlay({ position: p, content: el, yAnchor: 1, xAnchor: 0.5, clickable: true, zIndex: isDone ? 1 : isLater ? 2 : 3 });
       ov.setMap(map);
@@ -1163,8 +1265,11 @@
       (it.status === 'approx' ? `<br><span class="badge warn">${esc(it.note || '유사 검색으로 찾음')} · 위치 확인 필요</span>` : '') +
       (it.matched && it.matched !== it.address ? `<br><span class="muted">→ ${esc(it.matched)}</span>` : '') +
       (it.memo ? `<br><span class="muted">메모: ${esc(it.memo)}</span>` : '') +
+      extraHtml(it).replace(/<div class="kv fm">.*?<\/div>/, '') +
+      `<textarea class="fieldmemo" id="infoMemo" placeholder="현장 메모 (자동 저장)">${esc(it.fieldMemo || '')}</textarea>` +
       `<div class="row" style="margin-top:8px">${btns}</div>`;
     $('info').classList.add('show');
+    bindFieldMemo($('infoMemo'), it);
     $('infoGo').addEventListener('click', () => openNavi(it));
     $('infoDone')?.addEventListener('click', () => { markDone(it.idx); hideInfo(); });
     $('infoSkip')?.addEventListener('click', () => { markSkip(it.idx); hideInfo(); });
@@ -1175,6 +1280,17 @@
   function hideInfo() {
     $('info').classList.remove('show');
     items.forEach((x) => x.pinEl && x.pinEl.classList.remove('active'));
+  }
+
+  // 이전 진행 상태 복원 (모든 함수·상수 정의 뒤에 실행. 지도는 SDK 로드 후 drawPins에서 그려짐)
+  if (loadState()) {
+    fillColumnSelects();
+    $('colCard').classList.remove('hidden');
+    $('rowCount').textContent = `저장된 데이터 ${rawRows.length}행 (${headers.join(', ')})`;
+    $('progCard').classList.remove('hidden'); $('progText').textContent = '저장된 결과 복원';
+    renderAll(); $('routeCard').classList.remove('hidden'); updateRoadEstimate();
+    if (start) $('startStatus').textContent = `출발지: ${start.name} (${start.lat.toFixed(5)}, ${start.lng.toFixed(5)})`;
+    renderOrder(); updateNext();
   }
 
   // 테스트용 훅 (콘솔에서 확인)
