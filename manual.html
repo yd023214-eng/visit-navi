@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>방문지 순회 내비 사용설명서</title>
+<meta name="description" content="엑셀 주소 목록을 올리면 방문 순서를 계산해 내비 앱으로 안내하는 앱의 사용 방법">
+<style>
+  :root { --bg: #f6f7f9; --card: #fff; --text: #1a1d21; --muted: #5f6672; --line: #e2e5ea; --accent: #2f6fed; --ok: #1f9d55; --warn: #d97706; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-size: 17px; line-height: 1.6;
+    font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 16px 16px 60px; }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 16px; position: sticky; top: 0; z-index: 2; }
+  header .wrap { padding: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  header h1 { font-size: 19px; margin: 0; }
+  header a { font-size: 15px; color: var(--accent); text-decoration: none; white-space: nowrap; }
+  h2 { font-size: 21px; margin: 32px 0 10px; padding-top: 8px; border-top: 3px solid var(--accent); }
+  h3 { font-size: 17px; margin: 18px 0 6px; }
+  p { margin: 8px 0; }
+  ol, ul { padding-left: 22px; margin: 8px 0; }
+  li { margin: 6px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 12px 0; }
+  .tip { background: #e8efff; border-left: 4px solid var(--accent); padding: 10px 12px; border-radius: 8px; margin: 10px 0; font-size: 15px; }
+  .warn { background: #fdf1df; border-left: 4px solid var(--warn); padding: 10px 12px; border-radius: 8px; margin: 10px 0; font-size: 15px; }
+  .btn { display: inline-block; background: #eef1f5; border: 1px solid var(--line); border-radius: 8px; padding: 1px 8px; font-weight: 600; font-size: 15px; white-space: nowrap; }
+  .btn.green { background: #e3f6ea; color: var(--ok); border-color: #b8e6c8; }
+  .btn.blue { background: #e8efff; color: var(--accent); border-color: #c5d6fb; }
+  code { background: #eef1f5; padding: 1px 6px; border-radius: 4px; font-size: 15px; word-break: break-all; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; margin: 8px 0; }
+  th, td { border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+  th { background: #f0f2f5; }
+  .pin { display: inline-block; width: 22px; height: 22px; border-radius: 50%; vertical-align: middle; margin-right: 6px; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+  .toc { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc li { margin: 4px 0; }
+  .muted { color: var(--muted); font-size: 15px; }
+  img.shot { width: 100%; border: 1px solid var(--line); border-radius: 10px; }
+</style>
+</head>
+<body>
+<header><div class="wrap"><h1>방문지 순회 내비 사용설명서</h1><a href="./">앱 열기 →</a></div></header>
+<div class="wrap">
+
+<p>이 앱은 <b>엑셀에 적힌 여러 주소</b>를 올리면, <b>지금 내가 있는 곳에서 출발해 가장 가까운 순서</b>로 방문 순서를 정해 주고,
+버튼 하나로 <b>네이버지도·카카오맵·카카오내비</b>를 열어 길 안내를 시작해 주는 도구입니다.
+실제 운전 안내는 내비 앱이 하고, 이 앱은 "어디를 다음에 갈지"와 "어디까지 다녀왔는지"를 관리합니다.</p>
+
+<div class="toc">
+  <b>차례</b>
+  <ol>
+    <li><a href="#s1">처음 한 번만 하는 준비</a></li>
+    <li><a href="#s2">엑셀 파일 만드는 법</a></li>
+    <li><a href="#s3">매일 사용하는 순서</a></li>
+    <li><a href="#s4">화면과 버튼 설명</a></li>
+    <li><a href="#s5">자주 생기는 문제와 해결</a></li>
+    <li><a href="#s6">알아 두면 좋은 것</a></li>
+  </ol>
+</div>
+
+<!-- ===================== 1 ===================== -->
+<h2 id="s1">1. 처음 한 번만 하는 준비</h2>
+
+<h3>1-1. 앱 주소를 휴대폰 홈 화면에 추가</h3>
+<p>앱 주소: <code>https://yd023214-eng.github.io/visit-navi/</code></p>
+<div class="card">
+  <b>안드로이드 (크롬)</b>
+  <ol>
+    <li>크롬으로 위 주소를 엽니다.</li>
+    <li>오른쪽 위 <span class="btn">⋮</span> → <span class="btn">홈 화면에 추가</span> → <span class="btn">추가</span></li>
+  </ol>
+  <b>아이폰 (사파리)</b>
+  <ol>
+    <li>사파리로 위 주소를 엽니다. (크롬이 아니라 <b>사파리</b>여야 합니다)</li>
+    <li>아래 가운데 <span class="btn">공유 ⬆</span> → <span class="btn">홈 화면에 추가</span> → <span class="btn">추가</span></li>
+  </ol>
+</div>
+<div class="tip">홈 화면 아이콘으로 열면 일반 앱처럼 쓸 수 있습니다. 입력한 키와 진행 상태는 <b>그 휴대폰의 그 브라우저</b>에 저장됩니다. 다른 휴대폰이나 다른 브라우저에서는 처음부터 다시 설정해야 합니다.</div>
+
+<h3>1-2. 카카오 JavaScript 키 넣기</h3>
+<p>지도를 보여 주고 주소를 좌표로 바꾸려면 카카오 키가 필요합니다. 앱 맨 위 <span class="btn">설정 · 카카오 키 / 내비 앱</span>을 눌러 펼친 뒤, 키를 붙여넣고 <span class="btn blue">저장</span>을 누르면 지도가 나타납니다.</p>
+<div class="card">
+  <b>키를 관리자에게 받는 경우</b>
+  <p>같은 회사·팀에서 이미 쓰고 있다면 관리자에게 "카카오 JavaScript 키"를 받아 넣으면 됩니다. 이 키는 앱 주소에서만 동작하도록 묶여 있어서 팀 안에서 함께 써도 괜찮습니다.</p>
+  <b>직접 발급하는 경우</b>
+  <ol>
+    <li><a href="https://developers.kakao.com" target="_blank" rel="noopener">developers.kakao.com</a> 에 카카오 계정으로 로그인 → <span class="btn">내 애플리케이션</span> → <span class="btn">애플리케이션 추가하기</span>.
+      앱 이름·회사명(개인이면 본인 이름)·카테고리·대표 도메인(<code>https://yd023214-eng.github.io</code>)을 넣고 저장.</li>
+    <li>만든 앱 → <span class="btn">제품 설정</span> → <span class="btn">카카오맵</span> → <b>사용 설정 ON</b>.
+      <span class="muted">(카카오맵 메뉴가 안 보이면 계정에 다른 앱이 이미 있어서 그런 것입니다. 카카오맵을 켠 첫 앱만 무료라서, 그 앱을 쓰세요.)</span></li>
+    <li><span class="btn">앱 설정</span> → <span class="btn">플랫폼 키</span> → <b>JavaScript 키</b> → <span class="btn">JavaScript SDK 도메인</span>에 <code>https://yd023214-eng.github.io</code> 등록.</li>
+    <li>JavaScript 키를 복사해 앱의 설정 칸에 붙여넣고 <span class="btn blue">저장</span>.</li>
+  </ol>
+</div>
+<div class="tip">설정 안의 <span class="btn">연결 테스트</span>를 누르면 키가 제대로 동작하는지 바로 확인할 수 있습니다. "정상"이 나오면 끝.</div>
+
+<h3>1-3. 길 안내에 쓸 앱 고르기</h3>
+<p>같은 설정 카드에서 <b>네이버지도 / 카카오맵 / 카카오내비</b> 중 휴대폰에 설치된 앱을 고릅니다. 나중에 언제든 바꿀 수 있습니다.</p>
+
+<h3>1-4. (선택) 도로 거리로 계산하고 싶다면</h3>
+<p>기본은 직선거리로 순서를 정합니다. 강이나 산을 크게 돌아가는 지역이라면 "도로 거리" 방식이 더 정확합니다. 이때는 카카오 콘솔의 <span class="btn">앱 설정</span> → <span class="btn">플랫폼 키</span> → <b>REST API 키</b>를 하나 만들어(허용 IP는 비워 둡니다) 앱의 "거리 계산 방식 → 도로 거리" 아래 칸에 넣으면 됩니다. 하루 10,000번까지 무료이고, 주소 100곳을 한 번 계산하면 약 400번을 씁니다.</p>
+
+<!-- ===================== 2 ===================== -->
+<h2 id="s2">2. 엑셀 파일 만드는 법</h2>
+<p>엑셀(<code>.xlsx</code>)의 <b>첫 번째 시트, 첫 행에 열 이름</b>이 있고, 그 아래로 한 줄에 한 곳씩 적으면 됩니다.</p>
+<table>
+  <tr><th>순번</th><th>업체명</th><th>주소</th><th>담당자</th><th>전화번호</th><th>메모</th></tr>
+  <tr><td>1</td><td>○○상사</td><td>전남 순천시 서면 산단3길 25</td><td>김민수</td><td>010-1234-5678</td><td>오전 방문</td></tr>
+  <tr><td>2</td><td>△△마트</td><td>광주 북구 첨단과기로 123 2층</td><td>이서연</td><td>062-123-4567</td><td>주차 어려움</td></tr>
+</table>
+<ul>
+  <li><b>"주소"라는 글자가 들어간 열</b>은 꼭 있어야 합니다. (예: 주소, 배송주소, 사업장주소) 없으면 앱에서 직접 고를 수 있습니다.</li>
+  <li>업체명·담당자·전화번호·메모 열은 있으면 화면에 같이 보여 줍니다. 열 이름은 자유롭게 써도 됩니다.</li>
+  <li>열이 더 있어도 됩니다. 모든 열을 기억해 두었다가 "핀에 표시할 열"에서 골라 볼 수 있습니다.</li>
+</ul>
+<div class="tip"><b>주소는 이렇게 쓰면 잘 찾습니다</b>: "시/군/구 + 도로명 + 건물번호" (예: 순천시 서면 산단3길 25) 또는 "동/리 + 번지". 층·호수·괄호 안 설명이 붙어 있어도 앱이 알아서 걷어내고 찾습니다. 번지가 한두 개 틀려도 인근 번지로 찾아 주되 노란색으로 표시해 알려 줍니다.</div>
+
+<!-- ===================== 3 ===================== -->
+<h2 id="s3">3. 매일 사용하는 순서</h2>
+
+<div class="card">
+  <h3 style="margin-top:0">① 엑셀 올리기</h3>
+  <ol>
+    <li><span class="btn">파일 선택</span>을 눌러 엑셀 파일을 고릅니다. (카카오톡·메일로 받은 파일도 "파일" 앱이나 "다운로드"에서 고르면 됩니다)</li>
+    <li>"열 선택" 카드가 나타납니다. 주소 열·업체명 열·담당자 열·메모 열이 맞게 잡혔는지 확인합니다.</li>
+    <li>"핀에 표시할 열"에서 현장에서 보고 싶은 열을 체크합니다. "핀 색상 기준 열"에 담당자 같은 열을 고르면 사람별로 핀 색이 달라집니다. 이 선택은 기억됩니다.</li>
+    <li><span class="btn blue">주소 → 좌표 변환하고 지도에 표시</span>를 누릅니다. 잠시 기다리면 지도에 번호 핀이 찍힙니다.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">② 못 찾은 주소 고치기</h3>
+  <p>"변환 실패" 카드에 못 찾은 주소가 나옵니다. 주소를 고쳐 쓰고 <span class="btn">다시 시도</span>를 누르면 됩니다. 보통 시/군 이름이 빠졌거나 오타가 있는 경우입니다.</p>
+  <p>"중복 좌표" 카드는 같은 위치가 두 줄 이상 있다는 뜻입니다. 잘못 넣은 게 아니라면 그냥 두어도 됩니다.</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">③ 출발지 정하기</h3>
+  <p><span class="btn">현재 위치 사용</span>을 누르고, 휴대폰이 위치 권한을 물으면 <b>허용</b>합니다. 지도에 초록색 "출발" 핀이 찍힙니다.
+  위치가 안 잡히면 아래 칸에 출발 주소를 적고 <span class="btn">주소로 설정</span>.</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">④ 오늘 방문 순서 계산</h3>
+  <ol>
+    <li>"하루에 방문할 곳 수"를 정합니다. (예: 7) 나머지는 자동으로 "다음날 이후"로 넘어갑니다.</li>
+    <li>끝나고 출발지로 돌아와야 하면 "마지막에 출발지로 복귀"를 켭니다.</li>
+    <li><span class="btn blue">방문 순서 계산</span>을 누릅니다. 지도 핀 번호가 <b>방문 순서</b>로 바뀌고 파란 선으로 이어집니다.</li>
+    <li>순서를 바꾸고 싶으면 목록의 <span class="btn">▲</span><span class="btn">▼</span> 버튼을 누르거나, <span class="btn">≡</span>를 누른 채 끌어서 옮깁니다.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">⑤ 이동 → 도착 → 완료, 반복</h3>
+  <ol>
+    <li>맨 위의 큰 초록 버튼 <span class="btn green">다음 목적지 안내</span>를 누릅니다. 내비 앱이 열리며 경로가 잡힙니다.</li>
+    <li>도착해서 볼일을 본 뒤 이 앱으로 돌아와 <span class="btn blue">✓ 이곳 완료</span>를 누릅니다. 그 곳은 회색 ✓ 핀이 되고, 버튼이 다음 목적지로 바뀝니다.</li>
+    <li>오늘 못 갈 곳은 <span class="btn">건너뛰기</span>. 다음날 목록 맨 앞으로 갑니다.</li>
+    <li>핀을 탭하면 정보 카드가 올라옵니다. 전화번호를 탭하면 바로 전화가 걸리고, 아래 칸에 <b>현장 메모</b>를 적으면 자동 저장됩니다.</li>
+  </ol>
+  <div class="tip">내비 앱에 갔다가 돌아오거나 브라우저를 껐다 켜도 진행 상태는 그대로 남아 있습니다.</div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">⑥ 다음날 아침</h3>
+  <p>앱을 열고 <span class="btn">현재 위치에서 남은 곳 다시 계산</span>을 누르면, 완료한 곳을 뺀 나머지로 오늘 계획을 새로 만듭니다. 이걸 남은 곳이 없을 때까지 반복합니다.</p>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">⑦ 결과 정리</h3>
+  <p>"결과 내보내기" 카드의 <span class="btn">결과 엑셀 내보내기</span>를 누르면 원래 엑셀에 <b>방문순서 · 완료여부 · 완료시각 · 현장메모</b> 열이 붙은 파일이 내려받아집니다.</p>
+  <p>새 엑셀을 올리면 이전 데이터는 지워지니, 필요하면 먼저 내보내 두세요.</p>
+</div>
+
+<!-- ===================== 4 ===================== -->
+<h2 id="s4">4. 화면과 버튼 설명</h2>
+
+<h3>지도 핀 색깔</h3>
+<table>
+  <tr><td><span class="pin" style="background:#2f6fed"></span>파란 핀 (숫자)</td><td>오늘 방문할 곳. 숫자는 방문 순서.</td></tr>
+  <tr><td><span class="pin" style="background:#fff;border-color:#2f6fed"></span>흰 바탕 파란 테두리</td><td>다음날 이후에 갈 곳.</td></tr>
+  <tr><td><span class="pin" style="background:#b4bac3"></span>회색 ✓</td><td>완료한 곳.</td></tr>
+  <tr><td><span class="pin" style="background:#d97706"></span>노란 핀</td><td>주소를 정확히 못 찾아 <b>인근 주소나 비슷한 장소로 대체</b>한 곳. 위치를 한 번 확인하세요.</td></tr>
+  <tr><td><span class="pin" style="background:#1f9d55"></span>초록 "출발"</td><td>출발지(현재 위치).</td></tr>
+</table>
+<p class="muted">"핀 색상 기준 열"을 고르면 파란 핀 대신 값별 색이 쓰이고, 지도 왼쪽 위에 범례가 뜹니다.</p>
+
+<h3>주요 버튼</h3>
+<table>
+  <tr><th>버튼</th><th>하는 일</th></tr>
+  <tr><td><span class="btn green">다음 목적지 안내</span></td><td>내비 앱을 열어 다음 곳으로 안내. 버튼에 "다음: 이름 · 오늘 남은 곳 N개"가 표시됨.</td></tr>
+  <tr><td><span class="btn blue">✓ 이곳 완료</span></td><td>지금 목적지를 완료 처리(회색)하고 다음으로 넘어감.</td></tr>
+  <tr><td><span class="btn">건너뛰기</span></td><td>오늘 목록에서 빼고 다음날 이후 맨 앞으로.</td></tr>
+  <tr><td><span class="btn">오늘로 올리기</span></td><td>다음날 목록의 곳을 오늘 계획 끝에 추가.</td></tr>
+  <tr><td><span class="btn">완료 취소</span></td><td>실수로 완료한 곳을 되돌림. "완료한 곳" 목록에 있음.</td></tr>
+  <tr><td><span class="btn">현재 위치에서 남은 곳 다시 계산</span></td><td>완료한 곳을 빼고 지금 위치 기준으로 순서를 새로 계산. 순서가 틀어졌을 때나 다음날 아침에.</td></tr>
+  <tr><td><span class="btn">처음부터 다시</span></td><td>완료 표시와 순서를 모두 지움(주소는 남음). 확인창이 뜸.</td></tr>
+  <tr><td><span class="btn">여기로 안내</span></td><td>순서와 상관없이 그 곳으로 바로 내비 열기. 목록과 핀 정보 카드에 있음.</td></tr>
+</table>
+
+<!-- ===================== 5 ===================== -->
+<h2 id="s5">5. 자주 생기는 문제와 해결</h2>
+
+<div class="card">
+  <b>지도가 안 뜨고 "불러오지 못했습니다"가 나와요</b>
+  <ul>
+    <li>키를 잘못 붙여넣었거나(앞뒤 공백 포함), 카카오 콘솔에서 <b>카카오맵 사용 설정</b>이 꺼져 있거나, <b>JavaScript SDK 도메인</b>에 앱 주소가 등록되지 않은 경우입니다. 1-2를 다시 확인하세요.</li>
+    <li>설정의 <span class="btn">연결 테스트</span>가 원인을 알려 줍니다.</li>
+  </ul>
+</div>
+<div class="card">
+  <b>"현재 위치 사용"이 안 돼요</b>
+  <ul>
+    <li>위치 권한을 "거부"했다면: 휴대폰 설정 → 브라우저(크롬/사파리) → 위치 → 허용으로 바꾸고 다시 시도.</li>
+    <li>실내에서는 위치가 늦게 잡힐 수 있습니다. 급하면 출발 주소를 직접 입력하세요.</li>
+  </ul>
+</div>
+<div class="card">
+  <b>내비 앱이 안 열려요</b>
+  <ul>
+    <li>그 앱이 설치돼 있는지 확인하세요. 없으면 설치 화면으로 넘어갑니다.</li>
+    <li>설정에서 다른 앱(네이버지도 ↔ 카카오맵)으로 바꿔 보세요.</li>
+    <li>PC 브라우저에서는 내비 앱이 열리지 않습니다. 휴대폰에서 쓰세요.</li>
+  </ul>
+</div>
+<div class="card">
+  <b>주소가 "변환 실패"로 나와요</b>
+  <ul>
+    <li>시/군/구 이름을 앞에 붙이고, 도로명과 건물번호(또는 동과 번지)까지 적은 뒤 <span class="btn">다시 시도</span>.</li>
+    <li>모든 주소가 한꺼번에 실패하면 주소 문제가 아니라 키/설정 문제입니다. <span class="btn">연결 테스트</span>를 눌러 보세요.</li>
+  </ul>
+</div>
+<div class="card">
+  <b>어제 올린 데이터가 사라졌어요</b>
+  <ul>
+    <li>데이터는 <b>같은 휴대폰의 같은 브라우저</b>에만 저장됩니다. 다른 브라우저(예: 카카오톡 안에서 열기)로 열면 비어 보입니다. 홈 화면 아이콘으로 여는 습관을 들이세요.</li>
+    <li>브라우저의 "인터넷 기록 삭제"에서 사이트 데이터를 지우면 함께 지워집니다.</li>
+  </ul>
+</div>
+<div class="card">
+  <b>순서가 이상해요 (강 건너편이 먼저 나와요)</b>
+  <ul>
+    <li>기본은 직선거리라 강·바다·산을 돌아가는 길은 반영되지 않습니다. 목록에서 손으로 순서를 바꾸거나, 1-4의 "도로 거리" 방식을 켜 보세요.</li>
+  </ul>
+</div>
+
+<!-- ===================== 6 ===================== -->
+<h2 id="s6">6. 알아 두면 좋은 것</h2>
+<ul>
+  <li><b>노란 핀은 꼭 확인.</b> 번지가 없어 인근으로 대체한 곳은 실제 위치와 다를 수 있습니다. 핀을 탭하면 어떻게 찾았는지 이유가 나옵니다.</li>
+  <li><b>키는 남에게 보내지 마세요.</b> JavaScript 키는 앱 주소에서만 동작하도록 잠겨 있지만, REST API 키는 그렇지 않습니다.</li>
+  <li><b>무료 한도.</b> 카카오맵은 하루 30만 번, 도로 거리 계산은 하루 1만 번까지 무료라서 개인·소규모 사용에는 넉넉합니다.</li>
+  <li><b>새 엑셀을 올리면 이전 진행 상태가 지워집니다.</b> 결과가 필요하면 먼저 "결과 엑셀 내보내기".</li>
+  <li><b>PC에서도 됩니다.</b> 엑셀 준비와 주소 고치기는 PC 브라우저가 편하고, 내비 연결만 휴대폰에서 하면 됩니다. 단 저장은 기기별이라 PC에서 만든 계획이 휴대폰에 넘어가지는 않습니다.</li>
+</ul>
+
+<p class="muted" style="margin-top:32px">문의: 이 앱을 만든 관리자에게 연락하세요. · 최종 수정 2026-09-20</p>
+</div>
+</body>
+</html>
