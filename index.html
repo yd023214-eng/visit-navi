@@ -122,6 +122,13 @@
   .chips label.on { background: #e8efff; border-color: var(--accent); }
   .chips input { width: 18px; height: 18px; margin: 0; }
   .fm { color: #7c4a03; font-size: 14px; }
+  .results { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .results button { text-align: left; background: #fff; color: var(--text); border: 1px solid var(--line); font-size: 15px; padding: 10px 12px; min-height: 44px; }
+  .results button b { color: var(--accent); }
+  .pin.ret { background: #7c3aed; }
+  .pin.ret span { font-size: 11px; }
+  ul.order li.ret { color: #5b21b6; }
+  .num.ret { background: #7c3aed; font-size: 11px; }
 
   details summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
   .setup ol { padding-left: 20px; margin: 8px 0; }
@@ -233,13 +240,37 @@
       <button id="useGps" class="secondary" style="flex:1">현재 위치 사용</button>
     </div>
     <p class="muted" id="startStatus">아직 출발지가 없습니다.</p>
-    <div class="row">
+    <label class="field">올린 목록에서 찾기 (업체명 · 담당자 · 전화번호 · 주소)</label>
+    <input type="text" id="startSearch" placeholder="예: ○○상사, 김민수, 1234" autocomplete="off">
+    <div class="results" id="startResults"></div>
+    <div class="row" style="margin-top:6px">
       <input type="text" id="startAddr" placeholder="또는 출발 주소 직접 입력" style="flex:1">
       <button id="setStartAddr" class="small">주소로 설정</button>
     </div>
 
+    <h2 style="margin-top:16px">복귀 장소</h2>
+    <select id="returnMode">
+      <option value="none">복귀 안 함 (마지막 방문지에서 끝)</option>
+      <option value="start">출발지로 복귀</option>
+      <option value="place">지정한 장소로 복귀 (예: 집, 사무실)</option>
+    </select>
+    <div id="returnPlaceBox" class="hidden">
+      <p class="muted" id="returnStatus">복귀 장소가 아직 없습니다. 한 번 지정하면 계속 기억합니다.</p>
+      <label class="field">올린 목록에서 찾기</label>
+      <input type="text" id="returnSearch" placeholder="업체명 · 담당자 · 전화번호" autocomplete="off">
+      <div class="results" id="returnResults"></div>
+      <div class="row" style="margin-top:6px">
+        <input type="text" id="returnAddr" placeholder="또는 복귀 주소 직접 입력 (예: 집 주소)" style="flex:1">
+        <button id="setReturnAddr" class="small">주소로 설정</button>
+      </div>
+    </div>
+
     <h2 style="margin-top:16px">방문 순서 계산</h2>
-    <label class="check"><input type="checkbox" id="optReturn"> 마지막에 출발지로 복귀</label>
+    <label class="field">순서 정하는 방식</label>
+    <select id="orderMode">
+      <option value="nearest">지금 위치에서 가까운 곳부터 차례로</option>
+      <option value="optimal">하루 전체 이동거리가 가장 짧게</option>
+    </select>
     <label class="field">하루에 방문할 곳 수 (나머지는 "다음날 이후"로 넘김)</label>
     <input type="number" id="dailyLimit" min="1" max="200" inputmode="numeric" style="width:120px;font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px">
     <label class="field">거리 계산 방식</label>
@@ -335,8 +366,14 @@
   let planDate = '';       // 오늘 계획을 만든 날짜 (YYYY-MM-DD)
   let showCols = [];       // 핀에 표시할 열 이름들
   let colorCol = '';       // 핀 색상 기준 열
-  let settings = Object.assign({ naviApp: 'naver', returnToStart: false, distMode: 'line', mobilityKey: '', dailyLimit: 7 },
+  let settings = Object.assign({ naviApp: 'naver', returnToStart: false, returnMode: null, returnPlace: null, orderMode: 'nearest', distMode: 'line', mobilityKey: '', dailyLimit: 7 },
     JSON.parse(localStorage.getItem(LS_SET) || '{}'));
+  if (!settings.returnMode) settings.returnMode = settings.returnToStart ? 'start' : 'none';   // 예전 설정 이전
+  function returnPoint() {
+    if (settings.returnMode === 'start') return start;
+    if (settings.returnMode === 'place') return settings.returnPlace;
+    return null;
+  }
   const LS_STATE = 'vn.state';
   const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
@@ -367,12 +404,59 @@
 
   // ---------- 설정 UI ----------
   $('naviApp').value = settings.naviApp;
-  $('optReturn').checked = settings.returnToStart;
+  $('returnMode').value = settings.returnMode;
+  $('orderMode').value = settings.orderMode;
+  $('returnPlaceBox').classList.toggle('hidden', settings.returnMode !== 'place');
+  function showReturnStatus() {
+    const p = settings.returnPlace;
+    $('returnStatus').textContent = p ? `복귀 장소: ${p.name} (${p.lat.toFixed(5)}, ${p.lng.toFixed(5)})` : '복귀 장소가 아직 없습니다. 한 번 지정하면 계속 기억합니다.';
+  }
+  showReturnStatus();
+  $('returnMode').addEventListener('change', () => {
+    settings.returnMode = $('returnMode').value; saveSettings();
+    $('returnPlaceBox').classList.toggle('hidden', settings.returnMode !== 'place');
+    if (items.length) { recomputeLegs(); renderOrder(); drawPins(); updateNext(); }
+  });
+  $('orderMode').addEventListener('change', () => { settings.orderMode = $('orderMode').value; saveSettings(); });
+  function setReturnPlace(p) {
+    settings.returnPlace = p; settings.returnMode = 'place'; $('returnMode').value = 'place';
+    $('returnPlaceBox').classList.remove('hidden'); saveSettings(); showReturnStatus();
+    if (items.length) { recomputeLegs(); renderOrder(); drawPins(); updateNext(); }
+  }
+  $('setReturnAddr').addEventListener('click', async () => {
+    const a = $('returnAddr').value.trim();
+    if (!a) { alert('복귀 주소를 입력하세요.'); return; }
+    if (!geocoder) { alert('지도가 연결되지 않았습니다.'); return; }
+    $('returnStatus').textContent = '주소를 찾는 중…';
+    const r = await geocodeAddress(a);
+    if (r.ok) setReturnPlace({ lat: r.lat, lng: r.lng, name: a });
+    else $('returnStatus').textContent = '복귀 주소를 찾지 못했습니다: ' + r.reason;
+  });
+
+  // 올린 목록에서 업체명·담당자·전화번호·주소로 찾기
+  function bindRowSearch(inputId, resultsId, onPick) {
+    const inp = $(inputId), box = $(resultsId);
+    inp.addEventListener('input', () => {
+      const q = inp.value.trim().toLowerCase().replace(/-/g, '');
+      box.innerHTML = '';
+      if (q.length < 1) return;
+      const hits = items.filter((it) => it.lat != null && [it.name, it.person, it.address, ...Object.values(it.data || {})]
+        .some((v) => String(v ?? '').toLowerCase().replace(/-/g, '').includes(q))).slice(0, 8);
+      box.innerHTML = hits.map((it) => `<button type="button" data-idx="${it.idx}"><b>${esc(it.name || it.address)}</b>${it.person ? ` · ${esc(it.person)}` : ''}<br><span class="muted">${esc(it.address)}</span></button>`).join('') ||
+        '<span class="muted">일치하는 곳이 없습니다.</span>';
+      box.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+        const it = byIdxMap()[+b.dataset.idx];
+        onPick({ lat: it.lat, lng: it.lng, name: it.name || it.address, source: 'row', idx: it.idx });
+        inp.value = ''; box.innerHTML = '';
+      }));
+    });
+  }
+  bindRowSearch('startSearch', 'startResults', (p) => { setStart(p); $('startStatus').textContent += ' · 이 곳이 오늘 첫 목적지가 됩니다(이미 도착했다면 완료 처리하세요)'; });
+  bindRowSearch('returnSearch', 'returnResults', (p) => setReturnPlace(p));
   $('distMode').value = settings.distMode;
   $('mobilityKey').value = settings.mobilityKey;
   $('roadOpts').classList.toggle('hidden', settings.distMode !== 'road');
   $('naviApp').addEventListener('change', () => { settings.naviApp = $('naviApp').value; saveSettings(); updateNext(); });
-  $('optReturn').addEventListener('change', () => { settings.returnToStart = $('optReturn').checked; saveSettings(); });
   $('distMode').addEventListener('change', () => {
     settings.distMode = $('distMode').value; saveSettings();
     $('roadOpts').classList.toggle('hidden', settings.distMode !== 'road'); updateRoadEstimate();
@@ -775,24 +859,28 @@
   }
 
   // ---------- 순서 최적화: 최근접 이웃 + 2-opt (0번 = 출발지 고정) ----------
-  function optimize(D, closed) {
+  // D: 거리 행렬. 0번 = 출발지(고정). fixedEnd=true면 마지막 점(n-1) = 복귀 장소(고정, 방문지 아님).
+  // mode 'nearest': 지금 위치에서 가장 가까운 곳부터 차례로.  'optimal': 최근접 + 2-opt로 총거리 최소화.
+  function optimize(D, mode, fixedEnd) {
     const n = D.length;
-    if (n <= 2) return [...Array(n).keys()].slice(1);
+    const lastVisit = fixedEnd ? n - 2 : n - 1;         // 방문지 인덱스는 1..lastVisit
+    if (lastVisit < 1) return [];
     const visited = new Array(n).fill(false); visited[0] = true;
     let path = [0], cur = 0;
-    for (let k = 1; k < n; k++) {
+    for (let k = 1; k <= lastVisit; k++) {
       let best = -1, bd = Infinity;
-      for (let j = 1; j < n; j++) if (!visited[j] && D[cur][j] < bd) { bd = D[cur][j]; best = j; }
+      for (let j = 1; j <= lastVisit; j++) if (!visited[j] && D[cur][j] < bd) { bd = D[cur][j]; best = j; }
       visited[best] = true; path.push(best); cur = best;
     }
-    if (closed) path.push(0);
-    const last = path.length - 1;   // closed면 마지막은 출발지(고정), 아니면 마지막 방문지(자유)
+    if (mode === 'nearest') return path.slice(1);
+    if (fixedEnd) path.push(n - 1);
+    const last = path.length - 1;
     let improved = true, guard = 0;
     while (improved && guard++ < 200) {
       improved = false;
       for (let i = 1; i < last; i++) {
         for (let j = i + 1; j <= last; j++) {
-          if (closed && j === last) continue;
+          if (fixedEnd && j === last) continue;
           const a = path[i - 1], b = path[i], c = path[j], d = j < last ? path[j + 1] : null;
           const before = D[a][b] + (d != null ? D[c][d] : 0);
           const after = D[a][c] + (d != null ? D[b][d] : 0);
@@ -803,7 +891,7 @@
         }
       }
     }
-    return path.slice(1, closed ? -1 : undefined);
+    return path.slice(1, fixedEnd ? -1 : undefined);
   }
 
   $('calcOrder').addEventListener('click', () => calcRoute());
@@ -822,7 +910,9 @@
     const list = remainingItems();
     if (!list.length) { alert('남은 방문지가 없습니다. 모두 완료했거나 좌표가 없습니다.'); return; }
     items.forEach((it) => { if (it.done === 'skip') it.done = null; });   // 건너뛴 표시는 재계산 시 초기화
-    const points = [start, ...list];
+    const ret = returnPoint();
+    if (settings.returnMode === 'place' && !ret) { alert('복귀 장소를 먼저 지정하세요. (목록에서 찾거나 주소 입력)'); return; }
+    const points = ret ? [start, ...list, ret] : [start, ...list];
     const btn = $('calcOrder'); btn.disabled = true;
     let D, modeUsed = 'line', missing = 0, roadErr = '';
     try {
@@ -840,16 +930,16 @@
       D = points.map((a) => points.map((b) => haversine(a, b)));
       modeUsed = 'line';
     }
-    const seq = optimize(D, settings.returnToStart);
+    const seq = optimize(D, settings.orderMode, !!ret);
     order = seq.map((k) => points[k].idx);
     todayCount = Math.min(settings.dailyLimit, order.length);
     planDate = todayStr();
     legInfo = {};
     let prev = 0, total = 0;
-    seq.forEach((k, i) => { legInfo[points[k].idx] = { km: D[prev][k], mode: modeUsed }; if (i < todayCount) total += D[prev][k]; prev = k; });
-    if (settings.returnToStart && todayCount === order.length) total += D[prev][0];
+    seq.forEach((k, i) => { legInfo[points[k].idx] = { km: D[prev][k], mode: modeUsed }; if (i < todayCount) total += D[prev][k]; if (i === todayCount - 1) legInfo.__ret = ret ? { km: D[k][points.length - 1], mode: modeUsed } : null; prev = k; });
+    if (ret && legInfo.__ret) total += legInfo.__ret.km;
     const modeText = modeUsed === 'road' ? '도로 거리' : '직선거리';
-    let msg = `오늘 ${todayCount}곳 · ${modeText} 기준 ${total.toFixed(1)}km` + (settings.returnToStart && todayCount === order.length ? ' (복귀 포함)' : '');
+    let msg = `오늘 ${todayCount}곳 · ${modeText} 기준 ${total.toFixed(1)}km` + (ret ? ` (${ret.name}(으)로 복귀 포함)` : '');
     if (order.length > todayCount) msg += ` · ${order.length - todayCount}곳은 다음날 이후로`;
     if (modeUsed === 'road' && missing) msg += ` · ${missing}개 구간은 10km 반경 밖이라 직선×1.3으로 계산`;
     if (modeUsed === 'line' && settings.distMode === 'road') msg = `도로 거리 조회 실패(${roadErr}) → 직선거리로 대신 계산. ` + msg;
@@ -933,8 +1023,8 @@
       const legText = leg ? `${pos === 0 ? '출발지에서' : '이전 지점에서'} ${leg.km.toFixed(1)}km (${leg.mode === 'road' ? '도로' : '직선'})` : '';
       const btns = `<button class="tiny secondary go">여기로 안내</button><button class="tiny done">✓ 완료</button><button class="tiny secondary skip">건너뛰기</button>`;
       return itemHtml(it, pos + 1, it.status === 'approx' ? 'warn' : '', legText, btns, 'today');
-    }).join('');
-    $('orderList').querySelectorAll('li').forEach((li, pos) => {
+    }).join('') + (today.length && returnPoint() ? `<li class="ret"><span class="num ret">복귀</span><div class="body"><b>${esc(returnPoint().name)}</b>${legInfo.__ret ? `<br><span class="muted">마지막 방문지에서 ${legInfo.__ret.km.toFixed(1)}km (${legInfo.__ret.mode === 'road' ? '도로' : '직선'})</span>` : ''}</div></li>` : '');
+    $('orderList').querySelectorAll('li.today').forEach((li, pos) => {
       const idx = +li.dataset.idx;
       li.querySelector('.up').disabled = pos === 0;
       li.querySelector('.down').disabled = pos === today.length - 1;
@@ -984,8 +1074,11 @@
   function recomputeLegs() {
     // 순서가 바뀐 뒤에는 직선거리로 구간 거리만 다시 계산
     const byIdx = byIdxMap();
-    let prev = start, total = 0; legInfo = {};
-    order.forEach((idx, i) => { const it = byIdx[idx]; const km = prev ? haversine(prev, it) : 0; legInfo[idx] = { km, mode: 'line' }; if (i < todayCount) total += km; prev = it; });
+    let prev = start, total = 0, lastToday = start; legInfo = {};
+    order.forEach((idx, i) => { const it = byIdx[idx]; const km = prev ? haversine(prev, it) : 0; legInfo[idx] = { km, mode: 'line' }; if (i < todayCount) { total += km; lastToday = it; } prev = it; });
+    const ret = returnPoint();
+    legInfo.__ret = ret && lastToday ? { km: haversine(lastToday, ret), mode: 'line' } : null;
+    if (legInfo.__ret) total += legInfo.__ret.km;
     return total;
   }
 
@@ -1003,7 +1096,7 @@
     li.classList.add('dragging');
     const onMove = (ev) => {
       const el = document.elementFromPoint(ev.clientX, ev.clientY);
-      const over = el && el.closest('#orderList > li');
+      const over = el && el.closest('#orderList > li.today');
       if (!over || over === li) return;
       const r = over.getBoundingClientRect();
       if (ev.clientY < r.top + r.height / 2) list.insertBefore(li, over);
@@ -1014,7 +1107,7 @@
       handle.removeEventListener('pointerup', onUp);
       handle.removeEventListener('pointercancel', onUp);
       li.classList.remove('dragging');
-      const newToday = [...list.querySelectorAll('li')].map((x) => +x.dataset.idx);
+      const newToday = [...list.querySelectorAll('li.today')].map((x) => +x.dataset.idx);
       const newOrder = newToday.concat(order.slice(todayCount));
       if (newOrder.join() !== order.join()) { order = newOrder; afterManualReorder(); }
     };
@@ -1028,6 +1121,11 @@
     if (!todayCount) return null;
     return items.find((it) => it.idx === order[0]) || null;
   }
+  // 오늘 계획을 마친 뒤 복귀 장소로 안내할 때 쓰는 가짜 항목
+  function returnItem() {
+    const r = returnPoint();
+    return r ? { idx: 0, name: '복귀: ' + r.name, address: r.name, lat: r.lat, lng: r.lng, data: {} } : null;
+  }
 
   function updateNext() {
     const it = nextItem();
@@ -1036,8 +1134,13 @@
     $('nextCard').classList.toggle('hidden', !show);
     if (!show) return;
     const appName = { naver: '네이버지도', kakaomap: '카카오맵', kakaonavi: '카카오내비' }[settings.naviApp];
-    $('nextBtn').disabled = !it; $('nextDone').disabled = !it; $('nextSkip').disabled = !it;
-    if (it) {
+    const ret = returnItem();
+    $('nextBtn').disabled = !it && !(ret && planDate); $('nextDone').disabled = !it; $('nextSkip').disabled = !it;
+    $('nextBtn').firstChild.textContent = it ? '다음 목적지 안내' : (ret && planDate ? '복귀 장소로 안내' : '다음 목적지 안내');
+    if (!it && ret && planDate) {
+      $('nextSub').textContent = `${ret.address} · ${appName}` + (legInfo.__ret ? ` · ${legInfo.__ret.km.toFixed(1)}km` : '');
+      $('nextHint').textContent = order.length ? '오늘 계획을 모두 마쳤습니다. 내일은 [현재 위치에서 남은 곳 다시 계산]을 눌러 새 계획을 만드세요.' : '모든 곳을 방문했습니다.';
+    } else if (it) {
       $('nextSub').textContent = `다음: ${it.name || it.address}${it.person ? ` (담당 ${it.person})` : ''} · 오늘 남은 곳 ${todayCount}개 · ${appName}`;
       $('nextHint').innerHTML = `<span style="color:var(--text)">${esc(it.address)}</span>` + extraHtml(it) +
         ((isIOS || isAndroid) ? '' : '<br>PC에서는 내비 앱이 열리지 않습니다. 휴대폰에서 눌러 주세요.');
@@ -1049,7 +1152,7 @@
       (planDate && planDate !== todayStr() ? ` · ⚠ ${planDate}에 만든 계획입니다. 다시 계산을 권합니다.` : '');
   }
 
-  $('nextBtn').addEventListener('click', () => { const it = nextItem(); if (it) openNavi(it); });
+  $('nextBtn').addEventListener('click', () => { const it = nextItem() || (planDate && !todayCount ? returnItem() : null); if (it) openNavi(it); });
 
   // 앱별 URL 구성 (테스트를 위해 순수 함수로 분리)
   function buildNaviUrl(app, it, platform) {
@@ -1228,10 +1331,16 @@
       it.overlay = ov; it.pinEl = el;
       overlays.push(ov); bounds.extend(p); count++;
     });
+    const ret = returnPoint();
+    if (ret && settings.returnMode === 'place') {
+      const p = new kakao.maps.LatLng(ret.lat, ret.lng);
+      const ov = new kakao.maps.CustomOverlay({ position: p, content: makePinEl('복귀', 'ret'), yAnchor: 1, xAnchor: 0.5 });
+      ov.setMap(map); overlays.push(ov); bounds.extend(p); count++;
+    }
     if (todayCount && start) {
       const byIdx = byIdxMap();
       const path = [new kakao.maps.LatLng(start.lat, start.lng), ...order.slice(0, todayCount).map((idx) => new kakao.maps.LatLng(byIdx[idx].lat, byIdx[idx].lng))];
-      if (settings.returnToStart && todayCount === order.length) path.push(new kakao.maps.LatLng(start.lat, start.lng));
+      if (ret) path.push(new kakao.maps.LatLng(ret.lat, ret.lng));
       routeLine = new kakao.maps.Polyline({ path, strokeWeight: 4, strokeColor: '#2f6fed', strokeOpacity: 0.8, strokeStyle: 'solid' });
       routeLine.setMap(map);
     }
