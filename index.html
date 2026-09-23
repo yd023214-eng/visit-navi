@@ -104,12 +104,20 @@
   ul.list li.done b { color: var(--muted); }
   h3.sub { font-size: 15px; color: var(--muted); margin: 14px 0 6px; }
 
-  .info { position: absolute; left: 0; right: 0; bottom: 0; background: var(--card);
-    border-top: 1px solid var(--line); padding: 12px 16px; font-size: 15px; display: none;
-    word-break: break-word; overflow-wrap: anywhere; box-shadow: 0 -4px 12px rgba(0,0,0,.08); }
-  .info.show { display: block; }
-  .info b { font-size: 16px; }
-  .info { max-height: 60%; overflow-y: auto; }
+  /* 핀 정보 카드: 화면 맨 아래에서 올라오는 시트 */
+  .info { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: var(--card);
+    border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+    font-size: 16px; display: none; max-height: 70vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    word-break: break-word; overflow-wrap: anywhere; box-shadow: 0 -6px 20px rgba(0,0,0,.18); }
+  .info.show { display: block; animation: up .18s ease-out; }
+  @keyframes up { from { transform: translateY(30px); opacity: .5; } to { transform: none; opacity: 1; } }
+  .info b { font-size: 17px; }
+  .info .grip { width: 40px; height: 5px; border-radius: 3px; background: #d5d9df; margin: 0 auto 8px; }
+  .info .close { position: absolute; right: 10px; top: 10px; background: #eef1f5; color: var(--text); width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 50%; font-size: 20px; }
+  .info-backdrop { position: fixed; inset: 0; z-index: 59; background: rgba(0,0,0,.15); display: none; }
+  .info-backdrop.show { display: block; }
+  li.flash { animation: flash 1.6s ease-out; }
+  @keyframes flash { 0%, 40% { background: #fff3c4; } 100% { background: transparent; } }
   .kv { margin: 2px 0; }
   .kv .k { color: var(--muted); font-size: 13px; margin-right: 6px; }
   .kv a { color: var(--accent); text-decoration: none; font-weight: 600; }
@@ -147,7 +155,6 @@
 <div id="map">
   <div id="mapMsg">카카오 JavaScript 키를 설정하면 지도가 표시됩니다.</div>
   <div id="legend" class="hidden"></div>
-  <div id="info" class="info"></div>
 </div>
 
 <div id="panel">
@@ -339,6 +346,9 @@
   </div>
 
 </div>
+
+<div id="infoBackdrop" class="info-backdrop"></div>
+<div id="info" class="info" role="dialog" aria-label="방문지 정보"></div>
 
 <script>
 (() => {
@@ -1325,7 +1335,11 @@
       const isDone = it.done === 'done';
       const isLater = !isDone && pos[it.idx] > todayCount;
       const el = makePinEl(isDone ? '✓' : (pos[it.idx] || it.idx), isDone ? 'done' : isLater ? 'later' : (it.status === 'approx' && !cm) ? 'warn' : '', pinColor(it, cm));
-      el.addEventListener('click', (e) => { e.stopPropagation(); showInfo(it); });
+      // 휴대폰에서는 지도가 터치를 가로챌 수 있어 touchend와 click 둘 다 받되 한 번만 처리
+      let handled = 0;
+      const onTap = (e) => { e.stopPropagation(); if (e.cancelable) e.preventDefault(); const now = Date.now(); if (now - handled < 500) return; handled = now; showInfo(it); };
+      el.addEventListener('touchend', onTap, { passive: false });
+      el.addEventListener('click', onTap);
       const ov = new kakao.maps.CustomOverlay({ position: p, content: el, yAnchor: 1, xAnchor: 0.5, clickable: true, zIndex: isDone ? 1 : isLater ? 2 : 3 });
       ov.setMap(map);
       it.overlay = ov; it.pinEl = el;
@@ -1356,6 +1370,16 @@
     $('map').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  // 목록에서 해당 항목으로 스크롤하고 잠깐 강조
+  function scrollToListItem(idx) {
+    const li = document.querySelector(`#orderList li[data-idx="${idx}"], #laterList li[data-idx="${idx}"], #doneList li[data-idx="${idx}"], #okList li[data-idx="${idx}"]`);
+    if (!li) return false;
+    if (li.closest('#doneList')) $('doneWrap').open = true;
+    li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    li.classList.remove('flash'); void li.offsetWidth; li.classList.add('flash');
+    return true;
+  }
+
   function showInfo(it) {
     items.forEach((x) => x.pinEl && x.pinEl.classList.remove('active'));
     it.pinEl && it.pinEl.classList.add('active');
@@ -1376,8 +1400,13 @@
       (it.memo ? `<br><span class="muted">메모: ${esc(it.memo)}</span>` : '') +
       extraHtml(it).replace(/<div class="kv fm">.*?<\/div>/, '') +
       `<textarea class="fieldmemo" id="infoMemo" placeholder="현장 메모 (자동 저장)">${esc(it.fieldMemo || '')}</textarea>` +
-      `<div class="row" style="margin-top:8px">${btns}</div>`;
-    $('info').classList.add('show');
+      `<div class="row" style="margin-top:8px">${btns}</div>` +
+      `<div class="row" style="margin-top:8px"><button class="small secondary" id="infoList">📋 목록에서 보기</button><button class="small secondary" id="infoClose2">닫기</button></div>`;
+    $('info').insertAdjacentHTML('afterbegin', '<div class="grip"></div><button class="close" id="infoClose" aria-label="닫기">✕</button>');
+    $('info').classList.add('show'); $('infoBackdrop').classList.add('show');
+    $('infoClose').addEventListener('click', hideInfo);
+    $('infoClose2').addEventListener('click', hideInfo);
+    $('infoList').addEventListener('click', () => { hideInfo(); scrollToListItem(it.idx); });
     bindFieldMemo($('infoMemo'), it);
     $('infoGo').addEventListener('click', () => openNavi(it));
     $('infoDone')?.addEventListener('click', () => { markDone(it.idx); hideInfo(); });
@@ -1387,9 +1416,10 @@
   }
 
   function hideInfo() {
-    $('info').classList.remove('show');
+    $('info').classList.remove('show'); $('infoBackdrop').classList.remove('show');
     items.forEach((x) => x.pinEl && x.pinEl.classList.remove('active'));
   }
+  $('infoBackdrop').addEventListener('click', hideInfo);
 
   // 이전 진행 상태 복원 (모든 함수·상수 정의 뒤에 실행. 지도는 SDK 로드 후 drawPins에서 그려짐)
   if (loadState()) {
